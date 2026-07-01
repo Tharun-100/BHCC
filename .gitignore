@@ -1,0 +1,13 @@
+backend/.env
+backend/.venv/
+backend/venv/
+backend/staticfiles/
+backend/__pycache__/
+backend/**/__pycache__/
+backend/db.sqlite3
+frontend/.env.local
+frontend/.venv/
+frontend/.next/
+frontend/node_modules/
+frontend/*.log
+frontend/tsconfig.tsbuildinfo

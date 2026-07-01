@@ -1,0 +1,28 @@
+from django.urls import path
+
+from . import views
+
+urlpatterns = [
+    path("auth/login/", views.auth_login),
+    path("auth/staff/request-otp/", views.auth_staff_request_otp),
+    path("auth/staff/verify-otp/", views.auth_staff_verify_otp),
+    path("auth/register-patient/", views.auth_register_patient),
+    path("auth/me/", views.auth_me),
+    path("auth/password-reset/", views.auth_password_reset),
+    path("patient/profile/", views.patient_profile),
+    path("staff/profile/", views.staff_profile),
+    path("departments/", views.departments),
+    path("departments/<int:pk>/", views.department_detail),
+    path("doctors/", views.doctors),
+    path("appointments/", views.appointments),
+    path("appointments/<int:pk>/", views.appointment_detail),
+    path("availability/", views.availability),
+    path("feedback/", views.feedback),
+    path("registrations/", views.registrations),
+    path("admin/create-doctor/", views.admin_create_doctor),
+    path("admin/doctors/<int:pk>/schedule/", views.admin_update_doctor_schedule),
+    path("admin/create-staff/", views.admin_create_staff),
+    path("contact/", views.contact),
+    path("payments/create-order/", views.payments_create_order),
+    path("payments/verify/", views.payments_verify),
+]
