@@ -8,7 +8,9 @@ export class ApiError extends Error {
   }
 }
 
-const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+// Use the same origin by default. Next.js proxies /api to Django, which means
+// cloned deployments work from any hostname without rebuilding the frontend.
+const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '/api';
 
 export const getApiBaseUrl = () => baseUrl.replace(/\/+$/, '');
 
@@ -31,7 +33,7 @@ export async function apiFetch<T>(
     });
   } catch (error) {
     throw new ApiError(
-      `Cannot connect to backend at ${getApiBaseUrl()}. Please start Django and PostgreSQL, then try again.`,
+      `Cannot connect to the backend through ${getApiBaseUrl()}. Please make sure Django and PostgreSQL are running.`,
       0,
       error
     );

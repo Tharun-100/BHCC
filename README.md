@@ -1,6 +1,54 @@
-# BHCC (Next.js + Django + PostgreSQL)
+# BHCC Hospital Management
 
-This folder is the migrated stack version of the legacy `BVC` app.
+BHCC is a full-stack hospital-management website built with Next.js, Django REST Framework, and PostgreSQL. This repository contains everything needed to run the website on Windows, macOS, Linux, or a server.
+
+## Quick Start (Recommended)
+
+Install [Git](https://git-scm.com/) and [Docker Desktop](https://www.docker.com/products/docker-desktop/) (or Docker Engine with Compose), then run:
+
+```bash
+git clone https://github.com/Tharun-100/BHCC.git
+cd BHCC
+cp .env.docker.example .env.docker
+```
+
+Edit `.env.docker` and replace at least `POSTGRES_PASSWORD` and `DJANGO_SECRET_KEY`. For a remote server, also replace `localhost` in the host/origin settings with its domain name or IP address. Then start the complete stack:
+
+```bash
+docker compose --env-file .env.docker up --build -d
+```
+
+Open `http://localhost:3000`, or `http://SERVER_IP:3000` when installed on a server. Database migrations run automatically. PostgreSQL data is retained in a Docker volume across restarts.
+
+Create the first administrator:
+
+```bash
+docker compose --env-file .env.docker exec backend python manage.py create_account --role ADMIN --name "BHCC Admin" --email admin@example.com
+```
+
+Useful lifecycle commands:
+
+```bash
+docker compose --env-file .env.docker logs -f
+docker compose --env-file .env.docker pull
+docker compose --env-file .env.docker up --build -d
+docker compose --env-file .env.docker down
+```
+
+Do not use `down -v` unless you intentionally want to delete the PostgreSQL data.
+
+## Repository Layout
+
+```text
+BHCC/
+├── backend/              Django API, models, migrations, and admin commands
+├── frontend/             Next.js website
+├── compose.yaml          Complete web/API/database runtime
+├── .env.docker.example   Safe configuration template
+└── requirements.txt      Python dependency entry point
+```
+
+The browser calls `/api` on the same host as the website. Next.js proxies those requests to Django, so the Docker setup works from any hostname without rebuilding the frontend.
 
 ## Dependency Files
 
@@ -76,7 +124,7 @@ Copy-Item .env.example .env.local
 npm run dev
 ```
 
-## Server Deployment
+## Manual Server Deployment
 
 ### Backend (Linux)
 
@@ -97,11 +145,36 @@ gunicorn bhcc.wsgi:application --bind 0.0.0.0:8000
 ```bash
 cd BHCC/frontend
 npm ci
+npm run lint
 npm run build
 npm run start
 ```
 
-The frontend requires Node.js and npm on the server. Keep `package-lock.json` committed so `npm ci` installs the exact tested versions.
+Set `BACKEND_INTERNAL_URL=http://127.0.0.1:8000` before `npm run build` when Django is on the same server. The frontend requires Node.js and npm. Keep `package-lock.json` committed so `npm ci` installs the exact tested versions.
+
+## Production Checklist
+
+- Use long random values for `POSTGRES_PASSWORD` and `DJANGO_SECRET_KEY`.
+- Set `DJANGO_ALLOWED_HOSTS` to the public domain or IP.
+- Set `CORS_ALLOWED_ORIGINS` and `CSRF_TRUSTED_ORIGINS` to the full public URL, including `https://`.
+- Put a TLS reverse proxy such as Caddy or Nginx in front of port 3000.
+- Configure Razorpay and SendGrid only through environment variables; never commit live secrets.
+- Back up the `postgres_data` volume regularly.
+
+## Verification
+
+Before publishing changes:
+
+```bash
+cd frontend
+npm ci
+npm run lint
+npm run build
+
+cd ../backend
+python manage.py check
+python manage.py test
+```
 
 ## Offline Assets
 

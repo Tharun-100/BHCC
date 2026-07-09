@@ -1,4 +1,5 @@
 backend/.env
+.venv/
 backend/.venv/
 backend/venv/
 backend/staticfiles/
@@ -11,3 +12,5 @@ frontend/.next/
 frontend/node_modules/
 frontend/*.log
 frontend/tsconfig.tsbuildinfo
+.env
+.env.docker
