@@ -18,7 +18,13 @@ export async function apiFetch<T>(
   path: string,
   init: RequestInit & { authToken?: string } = {}
 ): Promise<T> {
-  const url = `${getApiBaseUrl()}${path.startsWith('/') ? '' : '/'}${path}`;
+  const apiBaseUrl = getApiBaseUrl();
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  const proxiedPath =
+    apiBaseUrl === '/api' && normalizedPath.startsWith('/api/')
+      ? normalizedPath.slice('/api'.length)
+      : normalizedPath;
+  const url = `${apiBaseUrl}${proxiedPath}`;
   const { authToken, headers, ...rest } = init;
 
   let res: Response;
