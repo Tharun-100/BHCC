@@ -1,5 +1,6 @@
 from __future__ import annotations
 import hmac
+import logging
 import os
 import secrets
 from datetime import date as date_type, timedelta
@@ -33,6 +34,7 @@ BOOK_STATUS_VALUES = {"Yet to Start", "Just Started", "Ongoing", "Completed"}
 INCOME_RANGE_VALUES = {"Less than 1 lakh", "1-5 Lakhs", "Greater than 5 Lakhs"}
 SPIRITUAL_FIELD_DISABLED_RELIGIONS = {"muslim", "christian"}
 STAFF_ROLES = {UserRole.DOCTOR, UserRole.ADMIN, UserRole.COUNTER, UserRole.STAFF}
+logger = logging.getLogger(__name__)
 WEEK_DAYS = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"}
 
 
@@ -168,20 +170,29 @@ def _weekly_schedule_payload(payload: dict) -> dict:
 
 def _send_staff_otp_email(user: User, code: str) -> bool:
     api_key = os.getenv("SENDGRID_API_KEY", "").strip()
+    from_email = _sendgrid_from_email()
     if not api_key:
+        return False
+    if not from_email:
+        logger.warning("SENDGRID_FROM_EMAIL is missing; staff OTP email was not sent.")
         return False
 
     mail = Mail(
-        from_email="noreply@bhcc.local",
+        from_email=from_email,
         to_emails=user.email or user.username,
         subject="[BHCC] Staff login OTP",
         html_content=f"<p>Your BHCC staff login OTP is <strong>{code}</strong>.</p><p>This code expires in 10 minutes.</p>",
     )
     try:
         SendGridAPIClient(api_key).send(mail)
-    except Exception:
+    except Exception as exc:
+        logger.warning("Failed to send staff OTP email via SendGrid: %s", exc)
         return False
     return True
+
+
+def _sendgrid_from_email() -> str:
+    return os.getenv("SENDGRID_FROM_EMAIL", "").strip() or os.getenv("CLINIC_TO_EMAIL", "").strip()
 
 
 @api_view(["POST"])
@@ -742,12 +753,15 @@ def contact(request):
         return Response({"detail": "name, email, and message are required."}, status=status.HTTP_400_BAD_REQUEST)
 
     api_key = os.getenv("SENDGRID_API_KEY", "").strip()
+    from_email = _sendgrid_from_email()
     to_email = os.getenv("CLINIC_TO_EMAIL", "").strip() or "yourclinic-inbox@example.com"
     if not api_key:
         return Response({"status": "success", "message": "Message accepted (SendGrid not configured)."})
+    if not from_email:
+        return Response({"detail": "SENDGRID_FROM_EMAIL is not configured."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     mail = Mail(
-        from_email="noreply@bhcc.local",
+        from_email=from_email,
         to_emails=to_email,
         subject=f"[BHCC] {subject}",
         html_content=f"<p><strong>From:</strong> {name} ({email})</p><p>{message}</p>",
