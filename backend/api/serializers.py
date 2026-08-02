@@ -77,7 +77,9 @@ def user_to_out(user: User) -> dict:
 
 class DepartmentSerializer(serializers.ModelSerializer):
     id = serializers.CharField(source="pk", read_only=True)
-    baseFee = serializers.IntegerField(source="base_fee")
+    icon = serializers.CharField(required=False, allow_blank=True, default="")
+    description = serializers.CharField(required=False, allow_blank=True, default="")
+    baseFee = serializers.IntegerField(source="base_fee", required=False, min_value=0, default=0)
 
     class Meta:
         model = Department

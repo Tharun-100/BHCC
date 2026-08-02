@@ -43,9 +43,13 @@ const AdminDepartments: React.FC = () => {
     e.preventDefault();
     setError(null);
 
-    const baseFee = Number(form.baseFee);
-    if (!form.name.trim() || !form.description.trim() || !form.icon.trim() || Number.isNaN(baseFee) || baseFee <= 0) {
-      setError('Please provide valid name, icon, description and base fee.');
+    const baseFee = form.baseFee.trim() === '' ? 0 : Number(form.baseFee);
+    if (!form.name.trim()) {
+      setError('Department name is required.');
+      return;
+    }
+    if (!Number.isInteger(baseFee) || baseFee < 0) {
+      setError('Base fee must be a whole number of 0 or more.');
       return;
     }
 
@@ -115,20 +119,22 @@ const AdminDepartments: React.FC = () => {
             />
             <input
               type="text"
-              placeholder="Lucide icon name (e.g. HeartPulse)"
+              placeholder="Lucide icon name (optional)"
               value={form.icon}
               onChange={(e) => setForm((prev) => ({ ...prev, icon: e.target.value }))}
               className="w-full px-4 py-3 rounded-xl border border-gray-200"
             />
             <input
               type="number"
-              placeholder="Base fee"
+              min="0"
+              step="1"
+              placeholder="Base fee (optional, defaults to 0)"
               value={form.baseFee}
               onChange={(e) => setForm((prev) => ({ ...prev, baseFee: e.target.value }))}
               className="w-full px-4 py-3 rounded-xl border border-gray-200"
             />
             <textarea
-              placeholder="Description"
+              placeholder="Description (optional)"
               value={form.description}
               onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))}
               rows={4}

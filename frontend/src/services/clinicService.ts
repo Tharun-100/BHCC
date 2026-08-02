@@ -89,6 +89,26 @@ export const listAllAppointments = async (): Promise<Appointment[]> => {
   return apiFetch<Appointment[]>('/api/appointments/', { method: 'GET', authToken: token });
 };
 
+export interface AdminDashboardSummary {
+  totalPatients: number;
+  appointmentsToday: number;
+  activeDoctors: number;
+  grossRevenue: number;
+  currentWeekAppointments: number;
+  completedToday: number;
+  weeklyGrowthPercent: number;
+  recentAppointments: Appointment[];
+  updatedAt: string;
+}
+
+export const getAdminDashboardSummary = async (): Promise<AdminDashboardSummary> => {
+  const token = authTokenOrThrow();
+  return apiFetch<AdminDashboardSummary>('/api/admin/dashboard/', {
+    method: 'GET',
+    authToken: token
+  });
+};
+
 export const updateAppointmentStatus = async (appointmentId: string, status: Appointment['status']): Promise<Appointment> => {
   const token = authTokenOrThrow();
   return apiFetch<Appointment>(`/api/appointments/${encodeURIComponent(appointmentId)}/`, {

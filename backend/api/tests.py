@@ -1,19 +1,21 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from unittest.mock import patch
 
 from django.contrib.auth.models import User
 from django.core import mail
 from django.test import TestCase, override_settings
+from django.utils import timezone
 from rest_framework.test import APIClient
+from rest_framework_simplejwt.tokens import RefreshToken
 
 from .email_service import (
     send_appointment_confirmation,
     send_contact_notification,
     send_staff_login_otp,
 )
-from .models import Appointment
+from .models import Appointment, Department, UserProfile, UserRole
 
 
 EMAIL_TEST_SETTINGS = {
@@ -125,3 +127,89 @@ class TransactionalEmailTests(TestCase):
         self.assertFalse(result.delivered)
         appointment.refresh_from_db()
         self.assertIsNone(appointment.confirmation_email_sent_at)
+
+
+class AdminDashboardTests(TestCase):
+    def setUp(self) -> None:
+        self.admin = User.objects.create_user(username="admin@example.com", password="admin-password")
+        UserProfile.objects.create(user=self.admin, role=UserRole.ADMIN, name="Admin")
+        self.patient = User.objects.create_user(username="patient-live@example.com", password="patient-password")
+        UserProfile.objects.create(user=self.patient, role=UserRole.PATIENT, name="Live Patient")
+        self.doctor = User.objects.create_user(username="doctor-live@example.com", password="doctor-password")
+        UserProfile.objects.create(user=self.doctor, role=UserRole.DOCTOR, name="Live Doctor")
+        self.client = APIClient()
+        self.client.force_authenticate(self.admin)
+
+    def test_admin_dashboard_uses_database_values(self) -> None:
+        today = timezone.localdate()
+        Appointment.objects.create(
+            patient=self.patient,
+            doctor=self.doctor,
+            patient_name="Live Patient",
+            doctor_name="Live Doctor",
+            department="Dental",
+            date=today,
+            time="10:00",
+            fee=750,
+            status=Appointment.Status.COMPLETED,
+            payment_status="Confirmed",
+        )
+        Appointment.objects.create(
+            patient=self.patient,
+            doctor=self.doctor,
+            patient_name="Older Patient",
+            doctor_name="Live Doctor",
+            department="Dental",
+            date=today - timedelta(days=8),
+            time="11:00",
+            fee=500,
+            payment_status="Pending",
+        )
+
+        response = self.client.get("/api/admin/dashboard/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["totalPatients"], 1)
+        self.assertEqual(response.data["appointmentsToday"], 1)
+        self.assertEqual(response.data["activeDoctors"], 1)
+        self.assertEqual(response.data["grossRevenue"], 750)
+        self.assertEqual(response.data["currentWeekAppointments"], 1)
+        self.assertEqual(response.data["completedToday"], 1)
+        self.assertEqual(response.data["weeklyGrowthPercent"], 0.0)
+        self.assertEqual(len(response.data["recentAppointments"]), 2)
+
+    def test_non_admin_cannot_access_dashboard_summary(self) -> None:
+        self.client.force_authenticate(self.patient)
+        response = self.client.get("/api/admin/dashboard/")
+        self.assertEqual(response.status_code, 403)
+
+    def test_refresh_token_returns_a_new_access_token(self) -> None:
+        refresh = RefreshToken.for_user(self.admin)
+        self.client.force_authenticate(user=None)
+
+        response = self.client.post(
+            "/api/auth/token/refresh/", {"refresh": str(refresh)}, format="json"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["access"])
+
+    def test_admin_can_create_department_with_only_a_name(self) -> None:
+        response = self.client.post(
+            "/api/departments/", {"name": "Neurology"}, format="json"
+        )
+
+        self.assertEqual(response.status_code, 201)
+        department = Department.objects.get(name="Neurology")
+        self.assertEqual(department.icon, "")
+        self.assertEqual(department.description, "")
+        self.assertEqual(department.base_fee, 0)
+
+    def test_department_rejects_a_negative_base_fee(self) -> None:
+        response = self.client.post(
+            "/api/departments/",
+            {"name": "Invalid Fee", "baseFee": -1},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)

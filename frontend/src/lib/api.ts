@@ -1,3 +1,5 @@
+import { clearTokens, getRefreshToken, setTokens } from '@/lib/storage';
+
 export class ApiError extends Error {
   status: number;
   body: unknown;
@@ -14,6 +16,42 @@ const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '/api';
 
 export const getApiBaseUrl = () => baseUrl.replace(/\/+$/, '');
 
+let refreshRequest: Promise<string | null> | null = null;
+
+async function refreshAccessToken(): Promise<string | null> {
+  if (refreshRequest) return refreshRequest;
+
+  const refresh = getRefreshToken();
+  if (!refresh) return null;
+
+  refreshRequest = (async () => {
+    try {
+      const res = await fetch(`${getApiBaseUrl()}/auth/token/refresh/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh }),
+      });
+      if (!res.ok) {
+        clearTokens();
+        return null;
+      }
+      const data = (await res.json()) as { access?: string; refresh?: string };
+      if (!data.access) {
+        clearTokens();
+        return null;
+      }
+      setTokens(data.access, data.refresh || refresh);
+      return data.access;
+    } catch {
+      return null;
+    } finally {
+      refreshRequest = null;
+    }
+  })();
+
+  return refreshRequest;
+}
+
 export async function apiFetch<T>(
   path: string,
   init: RequestInit & { authToken?: string } = {}
@@ -27,16 +65,22 @@ export async function apiFetch<T>(
   const url = `${apiBaseUrl}${proxiedPath}`;
   const { authToken, headers, ...rest } = init;
 
+  const performRequest = (token?: string) => fetch(url, {
+    ...rest,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(headers || {})
+    }
+  });
+
   let res: Response;
   try {
-    res = await fetch(url, {
-      ...rest,
-      headers: {
-        'Content-Type': 'application/json',
-        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
-        ...(headers || {})
-      }
-    });
+    res = await performRequest(authToken);
+    if (res.status === 401 && authToken) {
+      const renewedAccessToken = await refreshAccessToken();
+      if (renewedAccessToken) res = await performRequest(renewedAccessToken);
+    }
   } catch (error) {
     throw new ApiError(
       `Cannot connect to the backend through ${getApiBaseUrl()}. Please make sure Django and PostgreSQL are running.`,

@@ -8,7 +8,7 @@ from datetime import date as date_type, timedelta
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
 from django.conf import settings
-from django.db.models import Q
+from django.db.models import Q, Sum
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status
@@ -446,6 +446,55 @@ def department_detail(request, pk: int):
 def doctors(request):
     qs = User.objects.filter(profile__role=UserRole.DOCTOR).select_related("profile").order_by("profile__name", "username")
     return Response([user_to_out(u) for u in qs])
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, IsAdmin])
+def admin_dashboard(request):
+    today = timezone.localdate()
+    current_week_start = today - timedelta(days=6)
+    previous_week_start = today - timedelta(days=13)
+    previous_week_end = current_week_start - timedelta(days=1)
+
+    current_week_appointments = Appointment.objects.filter(
+        date__range=(current_week_start, today)
+    ).count()
+    previous_week_appointments = Appointment.objects.filter(
+        date__range=(previous_week_start, previous_week_end)
+    ).count()
+    if previous_week_appointments:
+        weekly_growth = round(
+            ((current_week_appointments - previous_week_appointments) / previous_week_appointments) * 100,
+            1,
+        )
+    else:
+        weekly_growth = 100.0 if current_week_appointments else 0.0
+
+    collected_revenue = (
+        Appointment.objects.filter(
+            Q(payment_status__iexact="Confirmed") | Q(status=Appointment.Status.COMPLETED)
+        ).aggregate(total=Sum("fee"))["total"]
+        or 0
+    )
+    recent_appointments = Appointment.objects.select_related("patient", "doctor").order_by("-created_at")[:10]
+
+    return Response(
+        {
+            "totalPatients": UserProfile.objects.filter(role=UserRole.PATIENT).count(),
+            "appointmentsToday": Appointment.objects.filter(date=today).count(),
+            "activeDoctors": UserProfile.objects.filter(
+                role=UserRole.DOCTOR, user__is_active=True
+            ).count(),
+            "grossRevenue": collected_revenue,
+            "currentWeekAppointments": current_week_appointments,
+            "completedToday": Appointment.objects.filter(
+                date=today, status=Appointment.Status.COMPLETED
+            ).count(),
+            "weeklyGrowthPercent": weekly_growth,
+            "recentAppointments": AppointmentSerializer(recent_appointments, many=True).data,
+            "updatedAt": timezone.now().isoformat(),
+        }
+    )
 
 
 @api_view(["GET", "POST"])
