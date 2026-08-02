@@ -16,9 +16,12 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
-from sendgrid import SendGridAPIClient
-from sendgrid.helpers.mail import Mail
 
+from .email_service import (
+    schedule_appointment_confirmation,
+    send_contact_notification,
+    send_staff_login_otp,
+)
 from .models import Appointment, Department, DoctorAvailability, EmailOTP, Feedback, LabRegistration, UserProfile, UserRole
 from .permissions import IsAdmin, IsCounter
 from .serializers import (
@@ -169,30 +172,13 @@ def _weekly_schedule_payload(payload: dict) -> dict:
 
 
 def _send_staff_otp_email(user: User, code: str) -> bool:
-    api_key = os.getenv("SENDGRID_API_KEY", "").strip()
-    from_email = _sendgrid_from_email()
-    if not api_key:
-        return False
-    if not from_email:
-        logger.warning("SENDGRID_FROM_EMAIL is missing; staff OTP email was not sent.")
-        return False
-
-    mail = Mail(
-        from_email=from_email,
-        to_emails=user.email or user.username,
-        subject="[BHCC] Staff login OTP",
-        html_content=f"<p>Your BHCC staff login OTP is <strong>{code}</strong>.</p><p>This code expires in 10 minutes.</p>",
-    )
-    try:
-        SendGridAPIClient(api_key).send(mail)
-    except Exception as exc:
-        logger.warning("Failed to send staff OTP email via SendGrid: %s", exc)
-        return False
-    return True
-
-
-def _sendgrid_from_email() -> str:
-    return os.getenv("SENDGRID_FROM_EMAIL", "").strip() or os.getenv("CLINIC_TO_EMAIL", "").strip()
+    profile = getattr(user, "profile", None)
+    recipient_name = getattr(profile, "name", "") or user.get_full_name() or "Staff member"
+    return send_staff_login_otp(
+        recipient=user.email or user.username,
+        recipient_name=recipient_name,
+        code=code,
+    ).delivered
 
 
 @api_view(["POST"])
@@ -487,6 +473,7 @@ def appointments(request):
             status=ser.validated_data.get("status", Appointment.Status.UPCOMING),
             payment_id=ser.validated_data.get("payment_id", ""),
         )
+        schedule_appointment_confirmation(obj.id)
         return Response({"id": str(obj.id)}, status=status.HTTP_201_CREATED)
 
     doctor_id = request.query_params.get("doctor_id")
@@ -752,24 +739,17 @@ def contact(request):
     if not (name and email and message):
         return Response({"detail": "name, email, and message are required."}, status=status.HTTP_400_BAD_REQUEST)
 
-    api_key = os.getenv("SENDGRID_API_KEY", "").strip()
-    from_email = _sendgrid_from_email()
-    to_email = os.getenv("CLINIC_TO_EMAIL", "").strip() or "yourclinic-inbox@example.com"
-    if not api_key:
-        return Response({"status": "success", "message": "Message accepted (SendGrid not configured)."})
-    if not from_email:
-        return Response({"detail": "SENDGRID_FROM_EMAIL is not configured."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-    mail = Mail(
-        from_email=from_email,
-        to_emails=to_email,
-        subject=f"[BHCC] {subject}",
-        html_content=f"<p><strong>From:</strong> {name} ({email})</p><p>{message}</p>",
-    )
-    try:
-        SendGridAPIClient(api_key).send(mail)
-    except Exception as exc:
-        return Response({"detail": f"Failed to send email: {exc}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    delivered = send_contact_notification(
+        sender_name=name,
+        sender_email=email,
+        inquiry_subject=subject,
+        message=message,
+    ).delivered
+    if not delivered:
+        return Response(
+            {"detail": "Your message could not be delivered right now. Please try again later."},
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
 
     return Response({"status": "success", "message": "Your message has been sent successfully!"})
 
@@ -830,6 +810,7 @@ def payments_create_order(request):
         appt.total_amount = fee
         appt.total_amount_paise = fee * 100
         appt.save(update_fields=["payment_status", "order_id", "gateway_fee", "total_amount", "total_amount_paise", "updated_at"])
+        schedule_appointment_confirmation(appt.id)
         return Response(
             {
                 "orderId": str(appt.id),
@@ -912,6 +893,7 @@ def payments_verify(request):
         appt.payment_id = rzp_payment_id
         appt.gateway_details = gateway_response
         appt.save(update_fields=["payment_status", "status", "payment_id", "gateway_details", "updated_at"])
+        schedule_appointment_confirmation(appt.id)
         return Response({"status": "success", "message": "Payment verified and appointment confirmed."})
 
     appt.payment_status = "Failed"

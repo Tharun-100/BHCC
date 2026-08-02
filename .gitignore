@@ -6,6 +6,7 @@ backend/staticfiles/
 backend/__pycache__/
 backend/**/__pycache__/
 backend/db.sqlite3
+backend/test.sqlite3
 frontend/.env.local
 frontend/.venv/
 frontend/.next/

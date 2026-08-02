@@ -86,8 +86,14 @@ POSTGRES_DB_SSLMODE=prefer
 
 RAZORPAY_KEY_ID=
 RAZORPAY_KEY_SECRET=
-SENDGRID_API_KEY=
+EMAIL_BACKEND_MODE=console
+RESEND_API_KEY=
+DEFAULT_FROM_EMAIL=Bhaktivedanta Healthcare <noreply@bhaktivedantahealthcare.tech>
+SUPPORT_EMAIL=support@bhaktivedantahealthcare.tech
+FRONTEND_URL=http://localhost:3000
+ADMIN_NOTIFICATION_EMAIL=
 CLINIC_TO_EMAIL=bhaktivedantahealthcarecentre@gmail.com
+CLINIC_LOCATION=Bhaktivedanta Healthcare Centre, Newtown, Kolkata
 "@
     $utf8WithoutBom = New-Object System.Text.UTF8Encoding($false)
     [System.IO.File]::WriteAllText((Join-Path $backendDirectory ".env"), $environmentContent, $utf8WithoutBom)

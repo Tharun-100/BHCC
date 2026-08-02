@@ -1,0 +1,10 @@
+New website contact message
+
+Name: {{ sender_name }}
+Email: {{ sender_email }}
+Subject: {{ inquiry_subject }}
+
+Message:
+{{ message }}
+
+Reply directly to this email to contact {{ sender_name }}.

@@ -1,0 +1,11 @@
+Hello {{ recipient_name|default:"Staff member" }},
+
+Your {{ clinic_name }} staff login code is:
+
+{{ code }}
+
+This code expires in {{ expires_minutes }} minutes and can be used only once.
+
+If you did not attempt to sign in, do not share this code and contact {{ support_email|default:"the clinic administrator" }}.
+
+{{ clinic_name }}

@@ -1,0 +1,17 @@
+Hello {{ recipient_name }},
+
+Your appointment at {{ clinic_name }} is confirmed.
+
+Reference: {{ appointment_reference }}
+Date: {{ appointment_date }}
+Time: {{ appointment_time }}
+Doctor: {{ doctor_name|default:"To be assigned" }}
+Department: {{ department|default:"General consultation" }}
+Location: {{ clinic_location }}
+Payment status: {{ payment_status }}
+
+Please arrive a little early. To cancel or reschedule, contact {{ support_email|default:"the clinic" }}.
+
+If you did not book this appointment, contact us promptly. This confirmation contains only scheduling information.
+
+{{ clinic_name }}

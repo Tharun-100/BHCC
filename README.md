@@ -107,7 +107,7 @@ python manage.py create_account --role ADMIN --name "BHCC Admin" --email admin@e
 python manage.py create_account --role COUNTER --name "Front Counter" --email counter@example.com
 ```
 
-The command securely prompts for the password. After the administrator signs in through Staff Access, doctors can be created from Dashboard > Doctors. A doctor can also be created from the command line:
+The command securely prompts for the password. After the administrator signs in through Internal Access, doctors can be created from Dashboard > Doctors. A doctor can also be created from the command line:
 
 ```powershell
 python manage.py create_account --role DOCTOR --name "Doctor Name" --email doctor@example.com --department "Cardiology" --specialty "Cardiologist" --experience "10 Years" --fee 1000 --available-days "Monday,Wednesday,Friday"
@@ -158,8 +158,10 @@ Set `BACKEND_INTERNAL_URL=http://127.0.0.1:8000` before `npm run build` when Dja
 - Set `DJANGO_ALLOWED_HOSTS` to the public domain or IP.
 - Set `CORS_ALLOWED_ORIGINS` and `CSRF_TRUSTED_ORIGINS` to the full public URL, including `https://`.
 - Put a TLS reverse proxy such as Caddy or Nginx in front of port 3000.
-- Configure Razorpay and SendGrid only through environment variables; never commit live secrets.
+- Configure Razorpay and Resend only through environment variables; never commit live secrets.
 - Back up the `postgres_data` volume regularly.
+
+Transactional email uses Resend through Django Anymail. See [the transactional email deployment guide](docs/transactional-email-deployment.md) for DNS, Coolify variables, and production acceptance checks.
 
 ## Verification
 

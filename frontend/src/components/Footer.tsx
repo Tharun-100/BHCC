@@ -66,7 +66,7 @@ const Footer: React.FC = () => {
         <div className="border-t border-gray-800 pt-8 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-gray-500">
           <p>(c) {new Date().getFullYear()} {CLINIC_NAME}. All rights reserved.</p>
           <Link href="/stafflogin" className="text-gray-700 hover:text-gray-400 transition-colors">
-            Staff access
+            Internal access
           </Link>
         </div>
       </div>

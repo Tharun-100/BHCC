@@ -501,7 +501,7 @@ const Login: React.FC = () => {
               onClick={() => router.push(`/stafflogin?next=${encodeURIComponent(from)}`)}
               className="text-xs font-semibold text-gray-300 hover:text-sky-600 transition-colors"
             >
-              Staff access
+              Internal access
             </button>
           </div>
         </div>

@@ -29,6 +29,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "django.contrib.postgres",
+    "anymail",
     "rest_framework",
     "corsheaders",
     "api",
@@ -77,6 +78,9 @@ DATABASES = {
     }
 }
 
+if os.getenv("DJANGO_TEST_SQLITE", "false").lower() in {"1", "true", "yes"}:
+    DATABASES = {"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": BASE_DIR / "test.sqlite3"}}
+
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
     {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
@@ -98,6 +102,36 @@ STORAGES = {
 }
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+EMAIL_BACKEND_MODE = os.getenv("EMAIL_BACKEND_MODE", "console" if DEBUG else "resend").strip().lower()
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "").strip()
+SUPPORT_EMAIL = os.getenv("SUPPORT_EMAIL", "").strip()
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000").strip().rstrip("/")
+ADMIN_NOTIFICATION_EMAIL = os.getenv("ADMIN_NOTIFICATION_EMAIL", "").strip()
+CLINIC_TO_EMAIL = os.getenv("CLINIC_TO_EMAIL", "").strip()
+CLINIC_LOCATION = os.getenv(
+    "CLINIC_LOCATION", "Bhaktivedanta Healthcare Centre, Newtown, Kolkata"
+).strip()
+
+if EMAIL_BACKEND_MODE == "console":
+    EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+elif EMAIL_BACKEND_MODE == "resend":
+    resend_api_key = os.getenv("RESEND_API_KEY", "").strip()
+    missing_email_settings = [
+        name
+        for name, value in (("RESEND_API_KEY", resend_api_key), ("DEFAULT_FROM_EMAIL", DEFAULT_FROM_EMAIL))
+        if not value
+    ]
+    if missing_email_settings:
+        raise ImproperlyConfigured(
+            f"Missing required Resend email settings: {', '.join(missing_email_settings)}"
+        )
+    EMAIL_BACKEND = "anymail.backends.resend.EmailBackend"
+    ANYMAIL = {"RESEND_API_KEY": resend_api_key}
+else:
+    raise ImproperlyConfigured("EMAIL_BACKEND_MODE must be either 'console' or 'resend'.")
+
+EMAIL_TIMEOUT = 15
 
 CORS_ALLOWED_ORIGINS = [o.strip() for o in os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:3000").split(",") if o.strip()]
 CSRF_TRUSTED_ORIGINS = [

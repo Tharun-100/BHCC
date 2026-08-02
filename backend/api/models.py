@@ -84,6 +84,7 @@ class Appointment(models.Model):
     total_amount = models.PositiveIntegerField(default=0)
     total_amount_paise = models.PositiveIntegerField(default=0)
     gateway_details = models.JSONField(null=True, blank=True)
+    confirmation_email_sent_at = models.DateTimeField(null=True, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
