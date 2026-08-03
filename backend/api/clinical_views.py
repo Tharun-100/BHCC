@@ -266,6 +266,8 @@ def prescriptions(request):
         rows = rows.filter(consultation__patient=request.user)
     elif role == UserRole.DOCTOR:
         rows = rows.filter(consultation__doctor=request.user)
+    elif role == UserRole.ADMIN:
+        pass
     else:
         return Response({"detail": "Prescriptions are visible only to the patient and assigned doctor."}, status=status.HTTP_403_FORBIDDEN)
     return Response([_prescription_out(row) for row in rows])
@@ -275,7 +277,7 @@ def prescriptions(request):
 @permission_classes([IsAuthenticated])
 def prescription_pdf(request, pk: int):
     row = get_object_or_404(Prescription.objects.select_related("consultation__appointment", "consultation__patient__profile", "consultation__doctor__profile").prefetch_related("medicines", "tests"), pk=pk, status=Prescription.Status.FINALIZED)
-    if request.user not in {row.consultation.patient, row.consultation.doctor}:
+    if request.user not in {row.consultation.patient, row.consultation.doctor} and _role(request.user) != UserRole.ADMIN:
         return Response({"detail": "Forbidden."}, status=status.HTTP_403_FORBIDDEN)
     from reportlab.lib.pagesizes import A4
     from reportlab.pdfgen import canvas

@@ -11,6 +11,7 @@ from django.core.exceptions import ValidationError
 from django.contrib.auth.models import User
 from django.conf import settings
 from django.db import transaction
+from django.db.models.deletion import ProtectedError
 from django.db.models import Q, Sum
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -904,11 +905,14 @@ def admin_update_account(request, pk: int):
         if user.pk == request.user.pk:
             return Response({"detail": "You cannot delete your own administrator account."}, status=status.HTTP_400_BAD_REQUEST)
         role = getattr(user.profile, "role", None)
-        if role not in {UserRole.ADMIN, UserRole.COUNTER, UserRole.STAFF}:
-            return Response({"detail": "Only Admin, Counter, and general staff accounts can be deleted here."}, status=status.HTTP_400_BAD_REQUEST)
         identity = user.email or user.username
-        user.delete()
-        transaction.on_commit(lambda: send_admin_notification(event="Staff account deleted", summary=f"The {role} account {identity} was permanently deleted by an administrator."))
+        if user.patient_appointments.exists() or user.doctor_appointments.exists() or user.consultations_given.exists() or user.consultations_received.exists():
+            return Response({"detail": "This account has protected clinical records and cannot be permanently deleted. Deactivate its login instead so appointments, prescriptions, and audit history remain intact."}, status=status.HTTP_409_CONFLICT)
+        try:
+            user.delete()
+        except ProtectedError:
+            return Response({"detail": "This account has protected clinical records and cannot be permanently deleted. Deactivate its login instead so appointments, prescriptions, and audit history remain intact."}, status=status.HTTP_409_CONFLICT)
+        transaction.on_commit(lambda: send_admin_notification(event="Account deleted", summary=f"The {role} account {identity} was permanently deleted by an administrator."))
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     if user.pk == request.user.pk and request.data.get("isActive") is False:
@@ -947,6 +951,13 @@ def admin_update_account(request, pk: int):
 def admin_staff_accounts(request):
     users = User.objects.filter(profile__role__in=[UserRole.ADMIN, UserRole.COUNTER, UserRole.STAFF]).select_related("profile").order_by("profile__name", "username")
     return Response([user_to_out(user) for user in users])
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, IsAdmin])
+def admin_all_accounts(request):
+    users = User.objects.exclude(profile__role=UserRole.PUBLIC).select_related("profile").order_by("profile__role", "profile__name", "username")
+    return Response([{**user_to_out(user), "isActive": user.is_active} for user in users])
 
 
 @api_view(["POST"])

@@ -112,6 +112,8 @@ const Navbar: React.FC<NavbarProps> = ({ user, onLogout }) => {
                 <NavLink to="/dashboard">Overview</NavLink>
                 <NavLink to="/dashboard/profile">Profile</NavLink>
                 <NavLink to="/dashboard/staff">Staff</NavLink>
+                <NavLink to="/dashboard/profiles">Profiles</NavLink>
+                <NavLink to="/dashboard/prescriptions">Prescriptions</NavLink>
                 <NavLink to="/dashboard/doctors">Doctors</NavLink>
                 <NavLink to="/dashboard/departments">Departments</NavLink>
                 <NavLink to="/dashboard/revenue">Revenue</NavLink>
@@ -212,6 +214,8 @@ const Navbar: React.FC<NavbarProps> = ({ user, onLogout }) => {
                 <>
                   <Link href="/dashboard/doctors" className="block py-2 text-gray-700" onClick={() => setIsOpen(false)}>Doctors</Link>
                   <Link href="/dashboard/staff" className="block py-2 text-gray-700" onClick={() => setIsOpen(false)}>Staff</Link>
+                  <Link href="/dashboard/profiles" className="block py-2 text-gray-700" onClick={() => setIsOpen(false)}>All Profiles</Link>
+                  <Link href="/dashboard/prescriptions" className="block py-2 text-gray-700" onClick={() => setIsOpen(false)}>Prescriptions</Link>
                   <Link href="/dashboard/departments" className="block py-2 text-gray-700" onClick={() => setIsOpen(false)}>Departments</Link>
                   <Link href="/dashboard/revenue" className="block py-2 text-gray-700" onClick={() => setIsOpen(false)}>Revenue</Link>
                   <Link href="/dashboard/availability" className="block py-2 text-gray-700" onClick={() => setIsOpen(false)}>Availability</Link>

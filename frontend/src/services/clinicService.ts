@@ -119,6 +119,18 @@ export const deleteStaffAccount = async (id: string): Promise<void> => {
   await apiFetch<void>(`/api/admin/accounts/${encodeURIComponent(id)}/`, { method: 'DELETE', authToken: token });
 };
 
+export const listAllAccounts = async (): Promise<User[]> => {
+  const token = getAccessToken();
+  if (!token) throw new Error('Not authenticated.');
+  return apiFetch<User[]>('/api/admin/accounts/', { method: 'GET', authToken: token });
+};
+
+export const setAccountActive = async (id: string, isActive: boolean): Promise<User> => {
+  const token = getAccessToken();
+  if (!token) throw new Error('Not authenticated.');
+  return apiFetch<User>(`/api/admin/accounts/${encodeURIComponent(id)}/`, { method: 'PATCH', authToken: token, body: JSON.stringify({ isActive }) });
+};
+
 export const updateAppointmentStatus = async (appointmentId: string, status: Appointment['status']): Promise<Appointment> => {
   const token = authTokenOrThrow();
   return apiFetch<Appointment>(`/api/appointments/${encodeURIComponent(appointmentId)}/`, {

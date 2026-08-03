@@ -29,6 +29,7 @@ export interface User {
   medicalRegistrationNumber?: string | null;
   registrationCouncil?: string | null;
   qualification?: string | null;
+  isActive?: boolean;
 }
 
 export interface AttendanceRecord {

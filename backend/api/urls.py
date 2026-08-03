@@ -53,6 +53,7 @@ urlpatterns = [
     path("admin/create-staff", views.admin_create_staff),
     path("admin/create-staff/", views.admin_create_staff),
     path("admin/accounts/<int:pk>/", views.admin_update_account),
+    path("admin/accounts/", views.admin_all_accounts),
     path("admin/staff-accounts/", views.admin_staff_accounts),
     path("admin/dashboard", views.admin_dashboard),
     path("admin/dashboard/", views.admin_dashboard),

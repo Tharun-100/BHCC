@@ -61,6 +61,22 @@ class ClinicalWorkflowTests(TestCase):
         self.assertEqual(pdf.status_code, 200)
         self.assertEqual(pdf["Content-Type"], "application/pdf")
 
+        client.force_authenticate(self.admin)
+        self.assertEqual(client.get("/api/prescriptions/").status_code, 200)
+        self.assertEqual(client.get(f"/api/prescriptions/{prescription_id}/pdf/").status_code, 200)
+
+    def test_admin_can_list_all_profiles_and_clinical_history_blocks_deletion(self) -> None:
+        client = APIClient(); client.force_authenticate(self.admin)
+        response = client.get("/api/admin/accounts/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual({row["role"] for row in response.data}, {UserRole.ADMIN, UserRole.DOCTOR, UserRole.PATIENT})
+        response = client.delete(f"/api/admin/accounts/{self.doctor.pk}/")
+        self.assertEqual(response.status_code, 409)
+        response = client.patch(f"/api/admin/accounts/{self.doctor.pk}/", {"isActive": False}, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.doctor.refresh_from_db()
+        self.assertFalse(self.doctor.is_active)
+
 
 EMAIL_TEST_SETTINGS = {
     "EMAIL_BACKEND": "django.core.mail.backends.locmem.EmailBackend",
