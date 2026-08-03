@@ -1,0 +1,6 @@
+{{ event }}
+
+{{ summary }}
+
+Occurred at: {{ occurred_at }}
+This operational notification contains no password, token, or medical details. Contact {{ support_email }} if investigation is required.

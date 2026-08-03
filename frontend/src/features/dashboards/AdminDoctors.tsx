@@ -6,12 +6,14 @@ import { listDoctorAppointments, listDoctors } from '../../services/clinicServic
 import { ApiError, apiFetch } from '@/lib/api';
 import { clearTokens, getAccessToken } from '@/lib/storage';
 import { useRouter } from 'next/navigation';
+import { downloadCsv } from '@/lib/downloadCsv';
 
 const AdminDoctors: React.FC<{ user: User }> = ({ user }) => {
   const router = useRouter();
   const [doctorStats, setDoctorStats] = React.useState<Array<User & { cleared: number; revenue: number }>>([]);
   const [isCreating, setIsCreating] = React.useState(false);
   const [createError, setCreateError] = React.useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = React.useState('');
   const [form, setForm] = React.useState({
     name: '',
     email: '',
@@ -49,6 +51,19 @@ const AdminDoctors: React.FC<{ user: User }> = ({ user }) => {
   React.useEffect(() => {
     loadDoctors().catch(() => setDoctorStats([]));
   }, [loadDoctors]);
+
+  const filteredDoctors = doctorStats.filter((doctor) =>
+    [doctor.name, doctor.specialty, doctor.department].some((value) =>
+      (value || '').toLowerCase().includes(searchTerm.toLowerCase())
+    )
+  );
+
+  const handleDownloadReport = () => {
+    downloadCsv('bhcc-doctors-report.csv', [
+      ['Doctor', 'Department', 'Specialty', 'Completed Appointments', 'Total Revenue', 'Clinic Share'],
+      ...filteredDoctors.map((doctor) => [doctor.name, doctor.department || '', doctor.specialty || '', doctor.cleared, doctor.revenue, doctor.revenue / 2]),
+    ]);
+  };
 
   const handleCreateDoctor = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -167,10 +182,12 @@ const AdminDoctors: React.FC<{ user: User }> = ({ user }) => {
             <input 
               type="text" 
               placeholder="Search doctor..." 
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
               className="pl-10 pr-4 py-2 bg-gray-50 border-none rounded-xl text-sm focus:ring-2 focus:ring-sky-500"
             />
           </div>
-          <button className="text-sm font-bold text-sky-600 hover:text-sky-700 flex items-center">
+          <button type="button" onClick={handleDownloadReport} className="text-sm font-bold text-sky-600 hover:text-sky-700 flex items-center">
             <Download size={16} className="mr-2" /> Download Report
           </button>
         </div>
@@ -186,7 +203,7 @@ const AdminDoctors: React.FC<{ user: User }> = ({ user }) => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {doctorStats.map((doc) => (
+              {filteredDoctors.map((doc) => (
                 <tr key={doc.id} className="hover:bg-gray-50 transition">
                   <td className="px-8 py-5">
                     <div className="flex items-center space-x-3">

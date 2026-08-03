@@ -8,6 +8,7 @@ import { listDoctorAppointments, updateAppointmentStatus } from '../../services/
 const DoctorSchedule: React.FC<{ user: User }> = ({ user }) => {
   const [view, setView] = useState<'appointments' | 'availability'>('appointments');
   const [schedule, setSchedule] = useState<Appointment[]>([]);
+  const [selectedDate, setSelectedDate] = useState(() => new Date());
   const [updatingAppointmentId, setUpdatingAppointmentId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -37,6 +38,16 @@ const DoctorSchedule: React.FC<{ user: User }> = ({ user }) => {
     }
   };
 
+  const moveDate = (days: number) => {
+    setSelectedDate((current) => {
+      const next = new Date(current);
+      next.setDate(next.getDate() + days);
+      return next;
+    });
+  };
+  const selectedDateKey = [selectedDate.getFullYear(), String(selectedDate.getMonth() + 1).padStart(2, '0'), String(selectedDate.getDate()).padStart(2, '0')].join('-');
+  const selectedAppointments = schedule.filter((appointment) => appointment.date === selectedDateKey);
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
       <div className="flex flex-col md:flex-row md:items-center justify-between mb-10 gap-6">
@@ -65,18 +76,18 @@ const DoctorSchedule: React.FC<{ user: User }> = ({ user }) => {
         <>
           <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
             <div className="flex items-center bg-white border border-gray-200 rounded-2xl p-1 shadow-sm">
-              <button className="p-2 hover:bg-gray-100 rounded-xl transition"><ChevronLeft size={20} /></button>
+              <button type="button" aria-label="Previous day" onClick={() => moveDate(-1)} className="p-2 hover:bg-gray-100 rounded-xl transition"><ChevronLeft size={20} /></button>
               <div className="px-6 font-bold text-gray-900 flex items-center">
-                <Calendar className="mr-2 text-sky-500" size={18} /> October 24, 2023
+                <Calendar className="mr-2 text-sky-500" size={18} /> {selectedDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
               </div>
-              <button className="p-2 hover:bg-gray-100 rounded-xl transition"><ChevronRight size={20} /></button>
+              <button type="button" aria-label="Next day" onClick={() => moveDate(1)} className="p-2 hover:bg-gray-100 rounded-xl transition"><ChevronRight size={20} /></button>
             </div>
           </div>
           {error && <div className="mb-6 bg-red-50 border border-red-100 text-red-600 px-5 py-4 rounded-2xl text-sm font-bold">{error}</div>}
 
           <div className="bg-white rounded-[2.5rem] border border-gray-100 shadow-sm overflow-hidden">
             <div className="grid grid-cols-1 divide-y divide-gray-100">
-              {schedule.map((app) => (
+              {selectedAppointments.map((app) => (
                 <div key={app.id} className="p-8 hover:bg-gray-50 transition group">
                   <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
                     <div className="flex items-center space-x-8">
@@ -110,12 +121,10 @@ const DoctorSchedule: React.FC<{ user: User }> = ({ user }) => {
                             {updatingAppointmentId === app.id ? <Loader2 size={18} className="mr-2 animate-spin" /> : <CheckCircle size={18} className="mr-2" />}
                             Mark Attended
                           </button>
-                          <button className="px-6 py-3 bg-white border border-gray-100 text-gray-700 rounded-2xl font-bold hover:bg-gray-50 transition">
-                            View Records
-                          </button>
+                          <span className="px-6 py-3 bg-gray-50 text-gray-400 rounded-2xl font-bold" title="Patient medical records are not yet stored in the system">Records unavailable</span>
                         </>
                       ) : (
-                        <button className="px-6 py-3 bg-gray-50 text-gray-400 rounded-2xl font-bold cursor-not-allowed">
+                        <button type="button" disabled className="px-6 py-3 bg-gray-50 text-gray-400 rounded-2xl font-bold cursor-not-allowed">
                           Consultation Finished
                         </button>
                       )}
@@ -123,6 +132,7 @@ const DoctorSchedule: React.FC<{ user: User }> = ({ user }) => {
                   </div>
                 </div>
               ))}
+              {selectedAppointments.length === 0 && <p className="p-10 text-center text-sm font-bold text-gray-400">No appointments scheduled for this date.</p>}
             </div>
           </div>
         </>

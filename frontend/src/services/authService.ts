@@ -78,13 +78,13 @@ export const verifyStaffLoginOtp = async (challengeId: string, otp: string): Pro
   return data.user;
 };
 
-export const registerPatientWithEmail = async (payload: PatientRegistrationPayload): Promise<User> => {
-  const data = await apiFetch<AuthResponse>('/api/auth/register-patient/', {
+export type PatientRegistrationResult = { verificationRequired: true; email: string; detail: string };
+
+export const registerPatientWithEmail = async (payload: PatientRegistrationPayload): Promise<PatientRegistrationResult> => {
+  return apiFetch<PatientRegistrationResult>('/api/auth/register-patient/', {
     method: 'POST',
     body: JSON.stringify(payload)
   });
-  setTokens(data.access, data.refresh);
-  return data.user;
 };
 
 export const getPatientProfile = async (): Promise<User> => {
@@ -135,3 +135,7 @@ export const requestPasswordReset = async (email: string): Promise<void> => {
     body: JSON.stringify({ email: normalized })
   });
 };
+
+export const verifyEmail = (uid: string, token: string) => apiFetch<{ ok: true }>('/api/auth/verify-email/', { method: 'POST', body: JSON.stringify({ uid, token }) });
+export const resendVerification = (email: string) => apiFetch<{ ok: true }>('/api/auth/resend-verification/', { method: 'POST', body: JSON.stringify({ email }) });
+export const confirmPasswordReset = (uid: string, token: string, password: string) => apiFetch<{ ok: true }>('/api/auth/password-reset/confirm/', { method: 'POST', body: JSON.stringify({ uid, token, password }) });

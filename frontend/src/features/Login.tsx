@@ -103,8 +103,8 @@ const Login: React.FC = () => {
     setIsLoading(true);
 
     try {
-      const nextUser = isRegistering
-        ? await registerPatientWithEmail({
+      if (isRegistering) {
+        const result = await registerPatientWithEmail({
             ...formData,
             name: formData.name.trim(),
             email: formData.email.trim(),
@@ -118,8 +118,13 @@ const Login: React.FC = () => {
             chantsHareKrishna: canShowSpiritualFields ? formData.chantsHareKrishna : false,
             mahamantraRounds: canShowSpiritualFields ? formData.mahamantraRounds : null,
             prabhupadaBooks: canShowSpiritualFields ? formData.prabhupadaBooks : { small: '', medium: '', big: '' }
-          })
-        : await loginWithEmail(formData.email.trim(), formData.password);
+          });
+        setSuccessMessage(result.detail);
+        setIsRegistering(false);
+        return;
+      }
+
+      const nextUser = await loginWithEmail(formData.email.trim(), formData.password);
 
       if (nextUser.role !== UserRole.PATIENT) {
         await logoutUser();

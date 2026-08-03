@@ -125,10 +125,11 @@ class FeedbackOutSerializer(serializers.Serializer):
 class LabRegistrationSerializer(serializers.ModelSerializer):
     id = serializers.CharField(source="pk", read_only=True)
     time = serializers.SerializerMethodField()
+    createdAt = serializers.DateTimeField(source="created_at", read_only=True)
 
     class Meta:
         model = LabRegistration
-        fields = ["id", "name", "age", "fee", "time"]
+        fields = ["id", "name", "age", "fee", "time", "createdAt"]
 
     def get_time(self, obj: LabRegistration) -> str:
         return obj.created_at.astimezone().strftime("%I:%M %p")

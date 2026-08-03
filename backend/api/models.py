@@ -43,6 +43,9 @@ class UserProfile(models.Model):
     working_hours_start = models.CharField(max_length=5, blank=True, default="09:00")
     working_hours_end = models.CharField(max_length=5, blank=True, default="17:00")
     weekly_schedule = models.JSONField(default=dict, blank=True)
+    email_verified_at = models.DateTimeField(null=True, blank=True)
+    verification_sent_at = models.DateTimeField(null=True, blank=True)
+    password_reset_sent_at = models.DateTimeField(null=True, blank=True)
 
     def __str__(self) -> str:
         return f"{self.user_id}:{self.role}"

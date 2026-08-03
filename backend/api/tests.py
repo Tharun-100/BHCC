@@ -24,6 +24,8 @@ EMAIL_TEST_SETTINGS = {
     "SUPPORT_EMAIL": "support@bhaktivedantahealthcare.tech",
     "CLINIC_TO_EMAIL": "clinic@example.com",
     "CLINIC_LOCATION": "Newtown, Kolkata",
+    "FRONTEND_URL": "https://example.test",
+    "ADMIN_NOTIFICATION_EMAIL": "admin@example.com",
 }
 
 
@@ -213,3 +215,67 @@ class AdminDashboardTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 400)
+
+    @override_settings(**EMAIL_TEST_SETTINGS)
+    def test_admin_account_status_change_sends_notification(self) -> None:
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.patch(
+                f"/api/admin/accounts/{self.doctor.id}/", {"isActive": False}, format="json"
+            )
+        self.assertEqual(response.status_code, 200)
+        self.doctor.refresh_from_db()
+        self.assertFalse(self.doctor.is_active)
+        self.assertEqual(mail.outbox[-1].to, ["admin@example.com"])
+        self.assertIn("disabled", mail.outbox[-1].subject.lower())
+
+
+@override_settings(**EMAIL_TEST_SETTINGS)
+class AccountSecurityEmailTests(TestCase):
+    def setUp(self) -> None:
+        self.client = APIClient()
+        self.patient = User.objects.create_user(username="security@example.com", email="security@example.com", password="Original-safe-password-94", first_name="Security")
+        self.profile = UserProfile.objects.create(user=self.patient, role=UserRole.PATIENT, name="Security Patient")
+
+    def test_password_reset_response_is_neutral_and_email_is_generated_only_for_known_user(self) -> None:
+        known = self.client.post("/api/auth/password-reset/", {"email": self.patient.email}, format="json")
+        unknown = self.client.post("/api/auth/password-reset/", {"email": "unknown@example.com"}, format="json")
+        self.assertEqual(known.status_code, 200)
+        self.assertEqual(known.data["detail"], unknown.data["detail"])
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("/reset-password?uid=", mail.outbox[0].body)
+
+    def test_reset_token_is_single_use_and_changes_password(self) -> None:
+        from django.contrib.auth.tokens import default_token_generator
+        from django.utils.encoding import force_bytes
+        from django.utils.http import urlsafe_base64_encode
+        uid = urlsafe_base64_encode(force_bytes(self.patient.pk))
+        token = default_token_generator.make_token(self.patient)
+        first = self.client.post("/api/auth/password-reset/confirm/", {"uid": uid, "token": token, "password": "New-safe-password-95"}, format="json")
+        second = self.client.post("/api/auth/password-reset/confirm/", {"uid": uid, "token": token, "password": "Another-safe-password-96"}, format="json")
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 400)
+        self.patient.refresh_from_db()
+        self.assertTrue(self.patient.check_password("New-safe-password-95"))
+        self.assertIn("password was changed", mail.outbox[-1].subject.lower())
+
+    def test_verification_token_activates_once_and_resend_obeys_cooldown(self) -> None:
+        from django.contrib.auth.tokens import default_token_generator
+        from django.utils.encoding import force_bytes
+        from django.utils.http import urlsafe_base64_encode
+        self.patient.is_active = False
+        self.patient.save(update_fields=["is_active"])
+        uid = urlsafe_base64_encode(force_bytes(self.patient.pk))
+        token = default_token_generator.make_token(self.patient)
+        first = self.client.post("/api/auth/verify-email/", {"uid": uid, "token": token}, format="json")
+        second = self.client.post("/api/auth/verify-email/", {"uid": uid, "token": token}, format="json")
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 400)
+        self.patient.refresh_from_db()
+        self.assertTrue(self.patient.is_active)
+
+        other = User.objects.create_user(username="unverified@example.com", email="unverified@example.com", password="Safe-password-97", is_active=False)
+        other_profile = UserProfile.objects.create(user=other, role=UserRole.PATIENT, name="Unverified", verification_sent_at=timezone.now())
+        before = len(mail.outbox)
+        response = self.client.post("/api/auth/resend-verification/", {"email": other.email}, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(mail.outbox), before)

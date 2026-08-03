@@ -5,12 +5,17 @@ import os
 import secrets
 from datetime import date as date_type, timedelta
 
-from django.contrib.auth import authenticate
+from django.contrib.auth import authenticate, password_validation
+from django.contrib.auth.tokens import default_token_generator
+from django.core.exceptions import ValidationError
 from django.contrib.auth.models import User
 from django.conf import settings
+from django.db import transaction
 from django.db.models import Q, Sum
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from django.utils.encoding import force_bytes, force_str
+from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -19,8 +24,12 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from .email_service import (
     schedule_appointment_confirmation,
+    send_admin_notification,
     send_contact_notification,
+    send_password_changed_email,
+    send_password_reset_email,
     send_staff_login_otp,
+    send_verification_email,
 )
 from .models import Appointment, Department, DoctorAvailability, EmailOTP, Feedback, LabRegistration, UserProfile, UserRole
 from .permissions import IsAdmin, IsCounter
@@ -181,6 +190,28 @@ def _send_staff_otp_email(user: User, code: str) -> bool:
     ).delivered
 
 
+def _security_link(path: str, user: User) -> str:
+    uid = urlsafe_base64_encode(force_bytes(user.pk))
+    token = default_token_generator.make_token(user)
+    return f"{settings.FRONTEND_URL}/{path}?uid={uid}&token={token}"
+
+
+def _send_patient_verification(user: User, profile: UserProfile) -> bool:
+    delivered = send_verification_email(recipient=user.email, recipient_name=profile.name, verification_url=_security_link("verify-email", user)).delivered
+    if delivered:
+        profile.verification_sent_at = timezone.now()
+        profile.save(update_fields=["verification_sent_at"])
+    return delivered
+
+
+def _user_from_token(uid: str, token: str) -> User | None:
+    try:
+        user = User.objects.select_related("profile").get(pk=force_str(urlsafe_base64_decode(uid)))
+    except (TypeError, ValueError, OverflowError, User.DoesNotExist):
+        return None
+    return user if default_token_generator.check_token(user, token) else None
+
+
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def auth_login(request):
@@ -297,13 +328,15 @@ def auth_register_patient(request):
 
     if User.objects.filter(username=email).exists():
         return Response({"detail": "An account with this email already exists."}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        password_validation.validate_password(password)
+    except ValidationError as exc:
+        return Response({"detail": " ".join(exc.messages)}, status=status.HTTP_400_BAD_REQUEST)
 
-    user = User.objects.create_user(username=email, email=email, password=password, first_name=name)
-    UserProfile.objects.create(user=user, role=UserRole.PATIENT, name=name, **profile_data)
-
-    data = _token_pair(user)
-    data["user"] = user_to_out(user)
-    return Response(data, status=status.HTTP_201_CREATED)
+    user = User.objects.create_user(username=email, email=email, password=password, first_name=name, is_active=False)
+    profile = UserProfile.objects.create(user=user, role=UserRole.PATIENT, name=name, **profile_data)
+    _send_patient_verification(user, profile)
+    return Response({"verificationRequired": True, "email": email, "detail": "Account created. Check your email to verify it before signing in."}, status=status.HTTP_201_CREATED)
 
 
 @api_view(["GET"])
@@ -408,6 +441,74 @@ def auth_password_reset(request):
     email = (request.data.get("email") or "").strip().lower()
     if not email:
         return Response({"detail": "Email is required."}, status=status.HTTP_400_BAD_REQUEST)
+    user = User.objects.filter(username=email, is_active=True).select_related("profile").first()
+    if user:
+        profile = _ensure_profile(user)
+        cooldown_elapsed = not profile.password_reset_sent_at or profile.password_reset_sent_at <= timezone.now() - timedelta(seconds=settings.PASSWORD_RESET_COOLDOWN_SECONDS)
+        if cooldown_elapsed:
+            delivered = send_password_reset_email(recipient=user.email or user.username, recipient_name=profile.name, reset_url=_security_link("reset-password", user)).delivered
+            if delivered:
+                profile.password_reset_sent_at = timezone.now()
+                profile.save(update_fields=["password_reset_sent_at"])
+    return Response({"ok": True, "detail": "If an account exists for this email, a reset link has been sent."})
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def auth_verify_email(request):
+    user = _user_from_token(str(request.data.get("uid") or ""), str(request.data.get("token") or ""))
+    if not user:
+        return Response({"detail": "This verification link is invalid or expired."}, status=status.HTTP_400_BAD_REQUEST)
+    profile = _ensure_profile(user)
+    if profile.email_verified_at:
+        return Response({"detail": "This verification link has already been used."}, status=status.HTTP_400_BAD_REQUEST)
+    profile.email_verified_at = timezone.now()
+    user.is_active = True
+    user.save(update_fields=["is_active"])
+    profile.save(update_fields=["email_verified_at"])
+    return Response({"ok": True})
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def auth_resend_verification(request):
+    email = str(request.data.get("email") or "").strip().lower()
+    user = User.objects.filter(username=email, is_active=False, profile__role=UserRole.PATIENT).select_related("profile").first()
+    if user and (not user.profile.verification_sent_at or user.profile.verification_sent_at <= timezone.now() - timedelta(seconds=settings.EMAIL_VERIFICATION_COOLDOWN_SECONDS)):
+        _send_patient_verification(user, user.profile)
+    return Response({"ok": True, "detail": "If an unverified account exists, a verification email has been sent."})
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def auth_password_reset_confirm(request):
+    user = _user_from_token(str(request.data.get("uid") or ""), str(request.data.get("token") or ""))
+    if not user:
+        return Response({"detail": "This reset link is invalid or expired."}, status=status.HTTP_400_BAD_REQUEST)
+    new_password = str(request.data.get("password") or "")
+    try:
+        password_validation.validate_password(new_password, user)
+    except ValidationError as exc:
+        return Response({"detail": " ".join(exc.messages)}, status=status.HTTP_400_BAD_REQUEST)
+    user.set_password(new_password)
+    user.save(update_fields=["password"])
+    send_password_changed_email(recipient=user.email or user.username, recipient_name=getattr(getattr(user, "profile", None), "name", ""))
+    return Response({"ok": True})
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def auth_change_password(request):
+    if not request.user.check_password(str(request.data.get("currentPassword") or "")):
+        return Response({"detail": "Current password is incorrect."}, status=status.HTTP_400_BAD_REQUEST)
+    new_password = str(request.data.get("newPassword") or "")
+    try:
+        password_validation.validate_password(new_password, request.user)
+    except ValidationError as exc:
+        return Response({"detail": " ".join(exc.messages)}, status=status.HTTP_400_BAD_REQUEST)
+    request.user.set_password(new_password)
+    request.user.save(update_fields=["password"])
+    send_password_changed_email(recipient=request.user.email or request.user.username, recipient_name=getattr(request.user.profile, "name", ""))
     return Response({"ok": True})
 
 
@@ -740,6 +841,7 @@ def admin_create_doctor(request):
         **common_profile,
         **spiritual_profile,
     )
+    transaction.on_commit(lambda: send_admin_notification(event="Doctor account created", summary=f"Doctor account created for {name} ({email})."))
     return Response({"uid": str(user.id), "email": email}, status=status.HTTP_201_CREATED)
 
 
@@ -775,7 +877,43 @@ def admin_create_staff(request):
         **common_profile,
         **spiritual_profile,
     )
+    transaction.on_commit(lambda: send_admin_notification(event="Staff account created", summary=f"{role} account created for {name} ({email})."))
     return Response({"uid": str(user.id), "email": email, "role": role}, status=status.HTTP_201_CREATED)
+
+
+@api_view(["PATCH"])
+@permission_classes([IsAuthenticated, IsAdmin])
+def admin_update_account(request, pk: int):
+    user = get_object_or_404(User.objects.select_related("profile"), pk=pk)
+    if user.pk == request.user.pk and request.data.get("isActive") is False:
+        return Response({"detail": "You cannot disable your own account."}, status=status.HTTP_400_BAD_REQUEST)
+    next_role = None
+    if "role" in request.data:
+        next_role = str(request.data.get("role") or "").strip().upper()
+        allowed_roles = {choice for choice, _ in UserRole.choices} - {UserRole.PUBLIC}
+        if next_role not in allowed_roles:
+            return Response({"detail": "Invalid account role."}, status=status.HTTP_400_BAD_REQUEST)
+
+    notifications: list[tuple[str, str]] = []
+    if "isActive" in request.data:
+        next_active = _truthy(request.data.get("isActive"))
+        if user.is_active != next_active:
+            user.is_active = next_active
+            user.save(update_fields=["is_active"])
+            label = "re-enabled" if next_active else "disabled"
+            notifications.append((f"Account {label}", f"Account {user.email or user.username} was {label} by an administrator."))
+
+    if "role" in request.data:
+        profile = _ensure_profile(user)
+        if profile.role != next_role:
+            previous_role = profile.role
+            profile.role = next_role
+            profile.save(update_fields=["role"])
+            notifications.append(("Account role changed", f"Account {user.email or user.username} changed from {previous_role} to {next_role}."))
+
+    for event, summary in notifications:
+        transaction.on_commit(lambda event=event, summary=summary: send_admin_notification(event=event, summary=summary))
+    return Response(user_to_out(user))
 
 
 @api_view(["POST"])
@@ -888,6 +1026,7 @@ def payments_create_order(request):
         appt.payment_status = "Failed"
         appt.status = Appointment.Status.CANCELLED
         appt.save(update_fields=["payment_status", "status", "updated_at"])
+        transaction.on_commit(lambda: send_admin_notification(event="Appointment payment failure", summary=f"Payment order creation failed for appointment BHCC-{appt.id:06d}."))
         return Response({"detail": "Could not create payment order."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     appt.order_id = str(appt.id)
@@ -949,4 +1088,5 @@ def payments_verify(request):
     appt.status = Appointment.Status.CANCELLED
     appt.gateway_details = gateway_response
     appt.save(update_fields=["payment_status", "status", "gateway_details", "updated_at"])
+    transaction.on_commit(lambda: send_admin_notification(event="Appointment payment failure", summary=f"Payment failed or was cancelled for appointment BHCC-{appt.id:06d}."))
     return Response({"status": "failed", "message": "Payment failed or was cancelled."}, status=status.HTTP_400_BAD_REQUEST)

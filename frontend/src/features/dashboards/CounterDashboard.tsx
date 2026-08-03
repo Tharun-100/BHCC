@@ -27,6 +27,7 @@ const CounterDashboard: React.FC<{ user: User }> = ({ user }) => {
       name: newName.trim(),
       age,
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      createdAt: new Date().toISOString(),
       fee: 200,
     };
     setRegistrations([newReg, ...registrations]);

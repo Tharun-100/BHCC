@@ -75,6 +75,22 @@ def send_staff_login_otp(*, recipient: str, recipient_name: str, code: str) -> E
     )
 
 
+def send_verification_email(*, recipient: str, recipient_name: str, verification_url: str) -> EmailDeliveryResult:
+    return _send_templated_email(subject="Verify your BHCC email", recipients=[recipient], template_name="email_verification", context={"recipient_name": recipient_name or "Patient", "action_url": verification_url, "expires_hours": 24}, reply_to=[settings.SUPPORT_EMAIL])
+
+
+def send_password_reset_email(*, recipient: str, recipient_name: str, reset_url: str) -> EmailDeliveryResult:
+    return _send_templated_email(subject="Reset your BHCC password", recipients=[recipient], template_name="password_reset", context={"recipient_name": recipient_name or "Patient", "action_url": reset_url, "expires_hours": 24}, reply_to=[settings.SUPPORT_EMAIL])
+
+
+def send_password_changed_email(*, recipient: str, recipient_name: str) -> EmailDeliveryResult:
+    return _send_templated_email(subject="Your BHCC password was changed", recipients=[recipient], template_name="password_changed", context={"recipient_name": recipient_name or "User", "changed_at": timezone.now().strftime("%Y-%m-%d %H:%M UTC")}, reply_to=[settings.SUPPORT_EMAIL])
+
+
+def send_admin_notification(*, event: str, summary: str) -> EmailDeliveryResult:
+    return _send_templated_email(subject=f"[BHCC Admin] {event}", recipients=[settings.ADMIN_NOTIFICATION_EMAIL], template_name="admin_notification", context={"event": event, "summary": summary, "occurred_at": timezone.now().strftime("%Y-%m-%d %H:%M UTC")}, reply_to=[settings.SUPPORT_EMAIL])
+
+
 def send_contact_notification(
     *, sender_name: str, sender_email: str, inquiry_subject: str, message: str
 ) -> EmailDeliveryResult:

@@ -104,4 +104,5 @@ export interface LabRegistration {
   age: number;
   time: string;
   fee: number;
+  createdAt: string;
 }

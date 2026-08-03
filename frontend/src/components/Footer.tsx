@@ -6,6 +6,17 @@ import { MapPin, Phone, Mail, Instagram, Facebook, Twitter } from 'lucide-react'
 import { CLINIC_NAME, CLINIC_ADDRESS, CLINIC_PHONE, CLINIC_EMAIL } from '../constants';
 import { BrandLockup } from './BrandLockup';
 
+const consultationServices = [
+  'Ophthalmology',
+  'Dental',
+  'Cardiology',
+  'Gynecology',
+  'Obstetrics',
+];
+
+const patientLoginForService = (department: string) =>
+  `/login?next=${encodeURIComponent(`/book?department=${encodeURIComponent(department)}`)}`;
+
 const Footer: React.FC = () => {
   return (
     <footer className="bg-gray-900 text-gray-300 pt-16 pb-8">
@@ -36,11 +47,13 @@ const Footer: React.FC = () => {
           <div className="xl:col-span-2">
             <h3 className="text-white font-bold mb-6">Our Services</h3>
             <ul className="space-y-4 text-sm">
-              <li>Ophthalmology Consultation</li>
-              <li>Dental Consultation</li>
-              <li>Cardiology Consultation</li>
-              <li>Gynecology Consultation</li>
-              <li>Obstetrics Consultation</li>
+              {consultationServices.map((service) => (
+                <li key={service}>
+                  <Link href={patientLoginForService(service)} className="hover:text-sky-400 transition">
+                    {service} Consultation
+                  </Link>
+                </li>
+              ))}
             </ul>
           </div>
 

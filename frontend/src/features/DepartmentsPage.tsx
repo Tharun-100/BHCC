@@ -52,7 +52,11 @@ const DepartmentsPage: React.FC = () => {
                   
                   <div className="flex items-center justify-between pt-8 border-t border-gray-50">
                     <span className="text-sm font-bold text-sky-600">Doctor Consultation</span>
-                    <Link href="/book" className="w-12 h-12 bg-sky-600 text-white rounded-full flex items-center justify-center hover:bg-sky-700 transition">
+                    <Link
+                      href={`/login?next=${encodeURIComponent(`/book?department=${encodeURIComponent(dept.name)}`)}`}
+                      aria-label={`Login as a patient to book ${dept.name}`}
+                      className="w-12 h-12 bg-sky-600 text-white rounded-full flex items-center justify-center hover:bg-sky-700 transition"
+                    >
                       <ArrowRight size={24} />
                     </Link>
                   </div>

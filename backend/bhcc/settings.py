@@ -106,7 +106,7 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 EMAIL_BACKEND_MODE = os.getenv("EMAIL_BACKEND_MODE", "console" if DEBUG else "resend").strip().lower()
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "").strip()
 SUPPORT_EMAIL = os.getenv("SUPPORT_EMAIL", "").strip()
-FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000").strip().rstrip("/")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000" if DEBUG else "").strip().rstrip("/")
 ADMIN_NOTIFICATION_EMAIL = os.getenv("ADMIN_NOTIFICATION_EMAIL", "").strip()
 CLINIC_TO_EMAIL = os.getenv("CLINIC_TO_EMAIL", "").strip()
 CLINIC_LOCATION = os.getenv(
@@ -119,7 +119,7 @@ elif EMAIL_BACKEND_MODE == "resend":
     resend_api_key = os.getenv("RESEND_API_KEY", "").strip()
     missing_email_settings = [
         name
-        for name, value in (("RESEND_API_KEY", resend_api_key), ("DEFAULT_FROM_EMAIL", DEFAULT_FROM_EMAIL))
+        for name, value in (("RESEND_API_KEY", resend_api_key), ("DEFAULT_FROM_EMAIL", DEFAULT_FROM_EMAIL), ("SUPPORT_EMAIL", SUPPORT_EMAIL), ("FRONTEND_URL", FRONTEND_URL), ("ADMIN_NOTIFICATION_EMAIL", ADMIN_NOTIFICATION_EMAIL))
         if not value
     ]
     if missing_email_settings:
@@ -132,6 +132,9 @@ else:
     raise ImproperlyConfigured("EMAIL_BACKEND_MODE must be either 'console' or 'resend'.")
 
 EMAIL_TIMEOUT = 15
+PASSWORD_RESET_TIMEOUT = 60 * 60 * 24
+EMAIL_VERIFICATION_COOLDOWN_SECONDS = 60
+PASSWORD_RESET_COOLDOWN_SECONDS = 60
 
 CORS_ALLOWED_ORIGINS = [o.strip() for o in os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:3000").split(",") if o.strip()]
 CSRF_TRUSTED_ORIGINS = [

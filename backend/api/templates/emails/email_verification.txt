@@ -1,0 +1,6 @@
+Hello {{ recipient_name }},
+
+You created a patient account with {{ clinic_name }}. Verify your email using this link:
+{{ action_url }}
+
+This link expires in {{ expires_hours }} hours and can be used once. If you did not register, ignore this email or contact {{ support_email }}.

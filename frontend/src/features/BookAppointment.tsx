@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { CLINIC_ADDRESS, DEPARTMENTS as FALLBACK_DEPARTMENTS, DOCTORS as FALLBACK_DOCTORS, isCurrentService, mergeCurrentDepartments } from '../constants';
 import { Department, User, WeekDayName, WeeklySchedule } from '../types';
 import {
@@ -78,6 +78,9 @@ const BookAppointment: React.FC = () => {
   const [selectedSlot, setSelectedSlot] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState(false);
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const requestedDepartment = searchParams?.get('department')?.trim() || '';
+  const hasAppliedRequestedDepartment = React.useRef(false);
 
   const [bookedSlots, setBookedSlots] = useState<string[]>([]);
   const [gatewayFee, setGatewayFee] = useState(0);
@@ -85,8 +88,13 @@ const BookAppointment: React.FC = () => {
   const [offlinePaymentMessage, setOfflinePaymentMessage] = useState('');
 
   useEffect(() => {
-    if (!isLoading && !user && !getAccessToken()) router.replace('/login?next=/book');
-  }, [isLoading, user, router]);
+    if (!isLoading && !user && !getAccessToken()) {
+      const destination = requestedDepartment
+        ? `/book?department=${encodeURIComponent(requestedDepartment)}`
+        : '/book';
+      router.replace(`/login?next=${encodeURIComponent(destination)}`);
+    }
+  }, [isLoading, user, router, requestedDepartment]);
 
   useEffect(() => {
     let mounted = true;
@@ -101,6 +109,15 @@ const BookAppointment: React.FC = () => {
       mounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!requestedDepartment || hasAppliedRequestedDepartment.current) return;
+    const requested = requestedDepartment.toLowerCase();
+    const match = departments.find((department) => department.name.toLowerCase() === requested);
+    if (!match) return;
+    hasAppliedRequestedDepartment.current = true;
+    handleDeptSelect(match);
+  }, [departments, requestedDepartment]);
 
   const handleDeptSelect = (dept: Department) => {
     setSelectedDept(dept);

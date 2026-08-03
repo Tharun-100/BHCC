@@ -25,7 +25,7 @@ CLINIC_TO_EMAIL=bhaktivedantahealthcarecentre@gmail.com
 CLINIC_LOCATION=Bhaktivedanta Healthcare Centre, Newtown, Kolkata
 ```
 
-Keep all private email variables unavailable at build time. Lock `RESEND_API_KEY` after saving it. The application deliberately fails to start in Resend mode when the API key or sender is missing.
+Keep all private email variables unavailable at build time. Lock `RESEND_API_KEY` after saving it. The application deliberately fails to start in Resend mode when the API key, sender, support address, frontend URL, or administrator notification address is missing.
 
 Redeploy the Compose resource. The backend container automatically runs database migrations before Gunicorn starts.
 
@@ -37,6 +37,11 @@ Redeploy the Compose resource. The backend container automatically runs database
 4. Complete a Razorpay test payment and confirm exactly one appointment message arrives after verification.
 5. Confirm appointment messages contain no diagnosis, clinical notes, passwords, or payment credentials.
 6. Review the Resend delivery log for rejected or bounced messages.
+7. Register a new patient, verify that no login is possible before verification, and open the verification link.
+8. Request two verification emails within 60 seconds and confirm only one is sent.
+9. Request a password reset for both a known and unknown address and confirm the API response is identical; repeat within 60 seconds and confirm no duplicate message is sent.
+10. Reset the password, confirm the link cannot be reused, and confirm the security-alert email arrives.
+11. Create a doctor/staff account and confirm the configured administrator receives a notification without a password.
 
 For local development, set `EMAIL_BACKEND_MODE=console`; messages are printed by Django and are not sent externally.
 

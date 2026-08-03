@@ -43,6 +43,10 @@ const PatientDashboard: React.FC<{ user: User }> = ({ user }) => {
     }
   };
 
+  const handleDirections = () => {
+    window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(CLINIC_ADDRESS)}`, '_blank', 'noopener,noreferrer');
+  };
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
       <div className="flex flex-col md:flex-row md:items-center justify-between mb-10 space-y-4 md:space-y-0">
@@ -67,8 +71,8 @@ const PatientDashboard: React.FC<{ user: User }> = ({ user }) => {
                 <div key={app.id} className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between group hover:shadow-md transition-shadow">
                   <div className="flex items-center space-x-6 mb-4 sm:mb-0">
                     <div className="w-16 h-16 bg-sky-50 rounded-2xl flex flex-col items-center justify-center text-sky-600">
-                      <span className="text-[10px] font-bold uppercase">OCT</span>
-                      <span className="text-xl font-black">24</span>
+                      <span className="text-[10px] font-bold uppercase">{new Date(`${app.date}T00:00:00`).toLocaleDateString('en-IN', { month: 'short' })}</span>
+                      <span className="text-xl font-black">{new Date(`${app.date}T00:00:00`).getDate()}</span>
                     </div>
                     <div>
                       <h4 className="font-bold text-gray-900">{app.doctorName}</h4>
@@ -80,7 +84,7 @@ const PatientDashboard: React.FC<{ user: User }> = ({ user }) => {
                     </div>
                   </div>
                   <div className="flex items-center space-x-3">
-                    <button className="px-4 py-2 bg-gray-50 text-gray-700 rounded-xl text-sm font-bold hover:bg-gray-100 flex items-center">
+                    <button type="button" onClick={handleDirections} className="px-4 py-2 bg-gray-50 text-gray-700 rounded-xl text-sm font-bold hover:bg-gray-100 flex items-center">
                       <MapPin size={14} className="mr-2" /> Directions
                     </button>
                     <button
@@ -127,7 +131,7 @@ const PatientDashboard: React.FC<{ user: User }> = ({ user }) => {
                         {app.status === 'Cancelled' ? (
                           <span className="text-gray-500 text-sm font-bold">{app.paymentStatus || 'Cancelled'}</span>
                         ) : (
-                          <button className="text-sky-600 font-bold text-sm hover:underline">Download Rx</button>
+                          <span className="text-gray-400 font-bold text-sm" title="No prescription has been uploaded for this appointment">Rx unavailable</span>
                         )}
                       </td>
                     </tr>

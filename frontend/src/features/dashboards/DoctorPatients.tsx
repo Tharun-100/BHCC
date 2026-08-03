@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { User } from '../../types';
-import { Search, Filter, MoreVertical, Phone, Mail, Calendar, ArrowRight, User as UserIcon } from 'lucide-react';
+import { Search, Phone, Calendar, User as UserIcon } from 'lucide-react';
 import { listDoctorAppointments } from '../../services/clinicService';
 
 const DoctorPatients: React.FC<{ user: User }> = ({ user }) => {
@@ -51,9 +51,6 @@ const DoctorPatients: React.FC<{ user: User }> = ({ user }) => {
               className="pl-12 pr-6 py-3 bg-white border border-gray-200 rounded-2xl w-full md:w-64 focus:ring-2 focus:ring-sky-500 transition-all outline-none"
             />
           </div>
-          <button className="p-3 bg-white border border-gray-200 rounded-2xl text-gray-500 hover:bg-gray-50 transition">
-            <Filter size={20} />
-          </button>
         </div>
       </div>
 
@@ -66,9 +63,6 @@ const DoctorPatients: React.FC<{ user: User }> = ({ user }) => {
               <div className="w-16 h-16 bg-gray-50 rounded-2xl flex items-center justify-center text-gray-400 group-hover:bg-sky-600 group-hover:text-white transition-colors">
                 <UserIcon size={32} />
               </div>
-              <button className="text-gray-300 hover:text-gray-600 transition">
-                <MoreVertical size={20} />
-              </button>
             </div>
 
             <h3 className="text-xl font-bold text-gray-900 mb-1">{patient.name}</h3>
@@ -91,9 +85,9 @@ const DoctorPatients: React.FC<{ user: User }> = ({ user }) => {
               </div>
             </div>
 
-            <button className="w-full py-4 bg-gray-50 text-gray-700 rounded-2xl font-bold group-hover:bg-sky-600 group-hover:text-white transition-all flex items-center justify-center">
-              View Records <ArrowRight size={18} className="ml-2" />
-            </button>
+            <p className="w-full py-4 bg-gray-50 text-gray-400 rounded-2xl font-bold text-center" title="Patient medical records are not yet stored in the system">
+              Medical records unavailable
+            </p>
           </div>
         ))}
       </div>
