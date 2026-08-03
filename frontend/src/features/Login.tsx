@@ -234,13 +234,13 @@ const Login: React.FC = () => {
             )}
 
             <div className="space-y-2">
-              <label className="text-xs font-bold text-gray-400 uppercase tracking-widest ml-1">Email Address</label>
+              <label className="text-xs font-bold text-gray-400 uppercase tracking-widest ml-1">{isRegistering || isResetMode ? 'Email Address' : 'Email or Patient ID'}</label>
               <div className="relative group">
                 <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300 group-focus-within:text-sky-500 transition-colors" size={20} />
                 <input
                   required
-                  type="email"
-                  placeholder="name@example.com"
+                  type={isRegistering || isResetMode ? 'email' : 'text'}
+                  placeholder={isRegistering || isResetMode ? 'name@example.com' : 'name@example.com or BHCC000000001'}
                   className="w-full pl-12 pr-4 py-4 bg-gray-50 border-2 border-transparent rounded-2xl focus:bg-white focus:border-sky-500 transition-all focus:ring-0 text-gray-900"
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}

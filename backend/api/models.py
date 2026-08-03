@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from django.contrib.auth.models import User
 from django.db import models
+from django.db import transaction
 
 
 class UserRole(models.TextChoices):
@@ -46,6 +47,10 @@ class UserProfile(models.Model):
     email_verified_at = models.DateTimeField(null=True, blank=True)
     verification_sent_at = models.DateTimeField(null=True, blank=True)
     password_reset_sent_at = models.DateTimeField(null=True, blank=True)
+    patient_id = models.CharField(max_length=13, unique=True, null=True, blank=True)
+    medical_registration_number = models.CharField(max_length=80, blank=True, default="")
+    registration_council = models.CharField(max_length=120, blank=True, default="")
+    qualification = models.CharField(max_length=160, blank=True, default="")
 
     def __str__(self) -> str:
         return f"{self.user_id}:{self.role}"
@@ -131,3 +136,145 @@ class EmailOTP(models.Model):
 
     def __str__(self) -> str:
         return f"{self.user_id}:{self.purpose}:{self.created_at:%Y-%m-%d %H:%M}"
+
+
+class PatientIdentifierSequence(models.Model):
+    last_value = models.PositiveBigIntegerField(default=0)
+
+
+class AttendanceRecord(models.Model):
+    class Status(models.TextChoices):
+        PRESENT = "PRESENT", "Present"
+        LATE = "LATE", "Late"
+        HALF_DAY = "HALF_DAY", "Half Day"
+        ABSENT = "ABSENT", "Absent"
+        LEAVE = "LEAVE", "On Leave"
+        HOLIDAY = "HOLIDAY", "Holiday"
+
+    employee = models.ForeignKey(User, on_delete=models.CASCADE, related_name="attendance_records")
+    date = models.DateField()
+    scheduled_start = models.CharField(max_length=5, blank=True, default="")
+    scheduled_end = models.CharField(max_length=5, blank=True, default="")
+    checked_in_at = models.DateTimeField(null=True, blank=True)
+    checked_out_at = models.DateTimeField(null=True, blank=True)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PRESENT)
+    late_minutes = models.PositiveIntegerField(default=0)
+    worked_minutes = models.PositiveIntegerField(default=0)
+    source = models.CharField(max_length=30, default="WEB")
+    admin_notes = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["employee", "date"], name="unique_daily_attendance")]
+        ordering = ["-date", "employee_id"]
+
+
+class LeaveRequest(models.Model):
+    class Status(models.TextChoices):
+        PENDING = "PENDING", "Pending"
+        APPROVED = "APPROVED", "Approved"
+        REJECTED = "REJECTED", "Rejected"
+
+    employee = models.ForeignKey(User, on_delete=models.CASCADE, related_name="leave_requests")
+    leave_type = models.CharField(max_length=40)
+    start_date = models.DateField()
+    end_date = models.DateField()
+    reason = models.TextField()
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
+    reviewed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="reviewed_leave_requests")
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+class AttendanceAuditLog(models.Model):
+    attendance = models.ForeignKey(AttendanceRecord, on_delete=models.CASCADE, related_name="audit_logs")
+    changed_by = models.ForeignKey(User, on_delete=models.PROTECT, related_name="attendance_changes")
+    previous_values = models.JSONField(default=dict)
+    new_values = models.JSONField(default=dict)
+    reason = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+class Consultation(models.Model):
+    class Status(models.TextChoices):
+        STARTED = "STARTED", "Started"
+        COMPLETED = "COMPLETED", "Completed"
+
+    appointment = models.OneToOneField(Appointment, on_delete=models.CASCADE, related_name="consultation")
+    doctor = models.ForeignKey(User, on_delete=models.PROTECT, related_name="consultations_given")
+    patient = models.ForeignKey(User, on_delete=models.PROTECT, related_name="consultations_received")
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.STARTED)
+    symptoms = models.TextField(blank=True, default="")
+    observations = models.TextField(blank=True, default="")
+    diagnosis = models.TextField(blank=True, default="")
+    advice = models.TextField(blank=True, default="")
+    follow_up_date = models.DateField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+
+class Prescription(models.Model):
+    class Status(models.TextChoices):
+        DRAFT = "DRAFT", "Draft"
+        FINALIZED = "FINALIZED", "Finalized"
+        SUPERSEDED = "SUPERSEDED", "Superseded"
+
+    consultation = models.ForeignKey(Consultation, on_delete=models.CASCADE, related_name="prescriptions")
+    prescription_number = models.CharField(max_length=30, unique=True)
+    version = models.PositiveIntegerField(default=1)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.DRAFT)
+    finalized_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["consultation", "version"], name="unique_prescription_version")]
+        ordering = ["-created_at"]
+
+
+class PrescriptionMedicine(models.Model):
+    prescription = models.ForeignKey(Prescription, on_delete=models.CASCADE, related_name="medicines")
+    name = models.CharField(max_length=160)
+    strength = models.CharField(max_length=80, blank=True, default="")
+    dosage_form = models.CharField(max_length=80, blank=True, default="")
+    dose = models.CharField(max_length=80)
+    frequency = models.CharField(max_length=100)
+    duration = models.CharField(max_length=100)
+    food_instructions = models.CharField(max_length=120, blank=True, default="")
+    notes = models.TextField(blank=True, default="")
+    position = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["position", "id"]
+
+
+class PrescriptionTest(models.Model):
+    prescription = models.ForeignKey(Prescription, on_delete=models.CASCADE, related_name="tests")
+    name = models.CharField(max_length=160)
+    instructions = models.TextField(blank=True, default="")
+    position = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["position", "id"]
+
+
+class PrescriptionAuditLog(models.Model):
+    prescription = models.ForeignKey(Prescription, on_delete=models.CASCADE, related_name="audit_logs")
+    performed_by = models.ForeignKey(User, on_delete=models.PROTECT, related_name="prescription_actions")
+    action = models.CharField(max_length=40)
+    summary = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+def allocate_patient_id(profile: UserProfile) -> str:
+    if profile.patient_id:
+        return profile.patient_id
+    with transaction.atomic():
+        sequence, _ = PatientIdentifierSequence.objects.select_for_update().get_or_create(pk=1)
+        sequence.last_value += 1
+        sequence.save(update_fields=["last_value"])
+        patient_id = f"BHCC{sequence.last_value:09d}"
+        UserProfile.objects.filter(pk=profile.pk, patient_id__isnull=True).update(patient_id=patient_id)
+        profile.patient_id = patient_id
+        return patient_id

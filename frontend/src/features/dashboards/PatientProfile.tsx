@@ -292,6 +292,7 @@ const PatientProfile: React.FC<{ initialUser: User }> = ({ initialUser }) => {
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
               <DetailCard label="Full Name" value={user.name} />
+              <DetailCard label="BHCC Patient ID" value={user.patientId || 'Pending'} />
               <DetailCard label="Email ID" value={<span className="inline-flex items-center"><Mail size={16} className="mr-2 text-sky-600" />{user.email}</span>} />
               <DetailCard label="Phone No" value={<span className="inline-flex items-center"><Phone size={16} className="mr-2 text-sky-600" />{profile?.phoneNo}</span>} />
               <DetailCard label="Profession" value={profile?.profession} />

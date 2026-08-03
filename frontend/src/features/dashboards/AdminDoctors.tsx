@@ -21,6 +21,9 @@ const AdminDoctors: React.FC<{ user: User }> = ({ user }) => {
     department: '',
     specialty: '',
     experience: '',
+    medicalRegistrationNumber: '',
+    registrationCouncil: '',
+    qualification: '',
     fee: '',
     salary: '',
     phoneNo: '',
@@ -79,6 +82,9 @@ const AdminDoctors: React.FC<{ user: User }> = ({ user }) => {
         !form.department.trim() ||
         !form.specialty.trim() ||
         !form.experience.trim() ||
+        !form.medicalRegistrationNumber.trim() ||
+        !form.registrationCouncil.trim() ||
+        !form.qualification.trim() ||
         !form.phoneNo.trim() ||
         Number.isNaN(fee) ||
         fee <= 0
@@ -99,6 +105,9 @@ const AdminDoctors: React.FC<{ user: User }> = ({ user }) => {
         department: form.department.trim(),
         specialty: form.specialty.trim(),
         experience: form.experience.trim(),
+        medicalRegistrationNumber: form.medicalRegistrationNumber.trim(),
+        registrationCouncil: form.registrationCouncil.trim(),
+        qualification: form.qualification.trim(),
         fee,
         salary: Number(form.salary) || null,
         phoneNo: form.phoneNo.trim(),
@@ -119,6 +128,9 @@ const AdminDoctors: React.FC<{ user: User }> = ({ user }) => {
         department: '',
         specialty: '',
         experience: '',
+        medicalRegistrationNumber: '',
+        registrationCouncil: '',
+        qualification: '',
         fee: '',
         salary: '',
         phoneNo: '',
@@ -158,6 +170,9 @@ const AdminDoctors: React.FC<{ user: User }> = ({ user }) => {
           <input className="px-4 py-3 rounded-xl border border-gray-200" placeholder="Department" value={form.department} onChange={(e) => setForm((p) => ({ ...p, department: e.target.value }))} />
           <input className="px-4 py-3 rounded-xl border border-gray-200" placeholder="Specialty" value={form.specialty} onChange={(e) => setForm((p) => ({ ...p, specialty: e.target.value }))} />
           <input className="px-4 py-3 rounded-xl border border-gray-200" placeholder="Experience (e.g. 8 Years)" value={form.experience} onChange={(e) => setForm((p) => ({ ...p, experience: e.target.value }))} />
+          <input className="px-4 py-3 rounded-xl border border-gray-200" placeholder="Medical registration number" value={form.medicalRegistrationNumber} onChange={(e) => setForm((p) => ({ ...p, medicalRegistrationNumber: e.target.value }))} />
+          <input className="px-4 py-3 rounded-xl border border-gray-200" placeholder="Registration council" value={form.registrationCouncil} onChange={(e) => setForm((p) => ({ ...p, registrationCouncil: e.target.value }))} />
+          <input className="px-4 py-3 rounded-xl border border-gray-200" placeholder="Qualification (e.g. MBBS, MD)" value={form.qualification} onChange={(e) => setForm((p) => ({ ...p, qualification: e.target.value }))} />
           <input type="number" className="px-4 py-3 rounded-xl border border-gray-200" placeholder="Consultation Fee" value={form.fee} onChange={(e) => setForm((p) => ({ ...p, fee: e.target.value }))} />
           <input type="number" className="px-4 py-3 rounded-xl border border-gray-200" placeholder="Salary (admin only)" value={form.salary} onChange={(e) => setForm((p) => ({ ...p, salary: e.target.value }))} />
           <input className="px-4 py-3 rounded-xl border border-gray-200" placeholder="Phone No" value={form.phoneNo} onChange={(e) => setForm((p) => ({ ...p, phoneNo: e.target.value }))} />

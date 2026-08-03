@@ -43,6 +43,9 @@ export type StaffProfilePayload = {
   availableDays?: string[];
   workingHours?: { start: string; end: string };
   weeklySchedule?: WeeklySchedule;
+  medicalRegistrationNumber?: string;
+  registrationCouncil?: string;
+  qualification?: string;
 };
 
 export const getCurrentUserProfile = async (): Promise<User | null> => {

@@ -1,0 +1,8 @@
+Hello {{ recipient_name }},
+
+Your prescription for appointment {{ appointment_reference }} is ready.
+
+Sign in securely to view or download it:
+{{ portal_url }}
+
+For your privacy, clinical details are not included in this email. If you did not attend this consultation, contact {{ support_email }}.

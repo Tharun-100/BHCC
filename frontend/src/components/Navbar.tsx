@@ -70,6 +70,7 @@ const Navbar: React.FC<NavbarProps> = ({ user, onLogout }) => {
               <>
                 <NavLink to="/dashboard">Dashboard</NavLink>
                 <NavLink to="/dashboard/profile">Profile</NavLink>
+                <NavLink to="/dashboard/prescriptions">Prescriptions</NavLink>
                 <NavLink to="/book">Book Appointment</NavLink>
                 <NavLink to="/feedback">My Feedback</NavLink>
                 <div className="w-px h-6 bg-gray-200 mx-4" />
@@ -91,6 +92,8 @@ const Navbar: React.FC<NavbarProps> = ({ user, onLogout }) => {
                 <NavLink to="/dashboard/profile">Profile</NavLink>
                 <NavLink to="/dashboard/schedule">My Schedule</NavLink>
                 <NavLink to="/dashboard/patients">Patients</NavLink>
+                <NavLink to="/dashboard/prescriptions">Prescriptions</NavLink>
+                <NavLink to="/dashboard/attendance">Attendance</NavLink>
                 <div className="w-px h-6 bg-gray-200 mx-4" />
                 <div className="flex items-center space-x-3 mr-4">
                   <div className="w-8 h-8 bg-sky-100 text-sky-600 rounded-full flex items-center justify-center font-bold text-xs">
@@ -113,6 +116,7 @@ const Navbar: React.FC<NavbarProps> = ({ user, onLogout }) => {
                 <NavLink to="/dashboard/departments">Departments</NavLink>
                 <NavLink to="/dashboard/revenue">Revenue</NavLink>
                 <NavLink to="/dashboard/availability">Availability</NavLink>
+                <NavLink to="/dashboard/attendance">Attendance</NavLink>
                 <div className="w-px h-6 bg-gray-200 mx-4" />
                 <div className="flex items-center space-x-3 mr-4">
                   <div className="w-8 h-8 bg-sky-100 text-sky-600 rounded-full flex items-center justify-center font-bold text-xs">
@@ -130,6 +134,7 @@ const Navbar: React.FC<NavbarProps> = ({ user, onLogout }) => {
               <>
                 <NavLink to="/dashboard">Counter Dashboard</NavLink>
                 <NavLink to="/dashboard/profile">Profile</NavLink>
+                <NavLink to="/dashboard/attendance">Attendance</NavLink>
                 <div className="w-px h-6 bg-gray-200 mx-4" />
                 <div className="flex items-center space-x-3 mr-4">
                   <div className="w-8 h-8 bg-sky-100 text-sky-600 rounded-full flex items-center justify-center font-bold text-xs">
@@ -147,6 +152,7 @@ const Navbar: React.FC<NavbarProps> = ({ user, onLogout }) => {
               <>
                 <NavLink to="/dashboard">Staff Dashboard</NavLink>
                 <NavLink to="/dashboard/profile">Profile</NavLink>
+                <NavLink to="/dashboard/attendance">Attendance</NavLink>
                 <div className="w-px h-6 bg-gray-200 mx-4" />
                 <div className="flex items-center space-x-3 mr-4">
                   <div className="w-8 h-8 bg-sky-100 text-sky-600 rounded-full flex items-center justify-center font-bold text-xs">
@@ -198,6 +204,8 @@ const Navbar: React.FC<NavbarProps> = ({ user, onLogout }) => {
                 <>
                   <Link href="/dashboard/schedule" className="block py-2 text-gray-700" onClick={() => setIsOpen(false)}>My Schedule</Link>
                   <Link href="/dashboard/patients" className="block py-2 text-gray-700" onClick={() => setIsOpen(false)}>Patients</Link>
+                  <Link href="/dashboard/prescriptions" className="block py-2 text-gray-700" onClick={() => setIsOpen(false)}>Prescriptions</Link>
+                  <Link href="/dashboard/attendance" className="block py-2 text-gray-700" onClick={() => setIsOpen(false)}>Attendance</Link>
                 </>
               )}
               {user.role === UserRole.ADMIN && (
@@ -207,13 +215,17 @@ const Navbar: React.FC<NavbarProps> = ({ user, onLogout }) => {
                   <Link href="/dashboard/departments" className="block py-2 text-gray-700" onClick={() => setIsOpen(false)}>Departments</Link>
                   <Link href="/dashboard/revenue" className="block py-2 text-gray-700" onClick={() => setIsOpen(false)}>Revenue</Link>
                   <Link href="/dashboard/availability" className="block py-2 text-gray-700" onClick={() => setIsOpen(false)}>Availability</Link>
+                  <Link href="/dashboard/attendance" className="block py-2 text-gray-700" onClick={() => setIsOpen(false)}>Attendance</Link>
                 </>
               )}
               {user.role === UserRole.COUNTER && (
                 <>
                   <Link href="/dashboard" className="block py-2 text-gray-700" onClick={() => setIsOpen(false)}>Counter Portal</Link>
+                  <Link href="/dashboard/attendance" className="block py-2 text-gray-700" onClick={() => setIsOpen(false)}>Attendance</Link>
                 </>
               )}
+              {user.role === UserRole.STAFF && <Link href="/dashboard/attendance" className="block py-2 text-gray-700" onClick={() => setIsOpen(false)}>Attendance</Link>}
+              {user.role === UserRole.PATIENT && <Link href="/dashboard/prescriptions" className="block py-2 text-gray-700" onClick={() => setIsOpen(false)}>Prescriptions</Link>}
               <button onClick={handleLogout} className="block w-full text-left py-2 text-red-500 font-medium">Logout</button>
             </>
           )}

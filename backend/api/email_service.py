@@ -91,6 +91,10 @@ def send_admin_notification(*, event: str, summary: str) -> EmailDeliveryResult:
     return _send_templated_email(subject=f"[BHCC Admin] {event}", recipients=[settings.ADMIN_NOTIFICATION_EMAIL], template_name="admin_notification", context={"event": event, "summary": summary, "occurred_at": timezone.now().strftime("%Y-%m-%d %H:%M UTC")}, reply_to=[settings.SUPPORT_EMAIL])
 
 
+def send_prescription_ready_email(*, recipient: str, recipient_name: str, appointment_reference: str) -> EmailDeliveryResult:
+    return _send_templated_email(subject=f"Your BHCC prescription is ready — {appointment_reference}", recipients=[recipient], template_name="prescription_ready", context={"recipient_name": recipient_name or "Patient", "appointment_reference": appointment_reference, "portal_url": f"{settings.FRONTEND_URL}/dashboard/prescriptions"}, reply_to=[settings.SUPPORT_EMAIL])
+
+
 def send_contact_notification(
     *, sender_name: str, sender_email: str, inquiry_subject: str, message: str
 ) -> EmailDeliveryResult:

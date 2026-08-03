@@ -34,6 +34,9 @@ const formFromUser = (user: User): StaffProfilePayload => ({
   department: user.department || '',
   specialty: user.specialty || '',
   experience: user.experience || '',
+  medicalRegistrationNumber: user.medicalRegistrationNumber || '',
+  registrationCouncil: user.registrationCouncil || '',
+  qualification: user.qualification || '',
   fee: user.fee || null,
   weeklySchedule: user.weeklySchedule || {}
 });
@@ -127,6 +130,9 @@ const StaffProfile: React.FC<{ user: User }> = ({ user: initialUser }) => {
       department: isDoctor ? (form.department || '').trim() : undefined,
       specialty: isDoctor ? (form.specialty || '').trim() : undefined,
       experience: isDoctor ? (form.experience || '').trim() : undefined,
+      medicalRegistrationNumber: isDoctor ? (form.medicalRegistrationNumber || '').trim() : undefined,
+      registrationCouncil: isDoctor ? (form.registrationCouncil || '').trim() : undefined,
+      qualification: isDoctor ? (form.qualification || '').trim() : undefined,
       weeklySchedule: isDoctor ? form.weeklySchedule || {} : undefined
     };
 
@@ -245,6 +251,9 @@ const StaffProfile: React.FC<{ user: User }> = ({ user: initialUser }) => {
                 <input required className="px-4 py-4 bg-gray-50 border-2 border-transparent rounded-2xl focus:bg-white focus:border-sky-500 text-gray-900" placeholder="Department" value={form.department || ''} onChange={(event) => setForm({ ...form, department: event.target.value })} />
                 <input required className="px-4 py-4 bg-gray-50 border-2 border-transparent rounded-2xl focus:bg-white focus:border-sky-500 text-gray-900" placeholder="Specialty" value={form.specialty || ''} onChange={(event) => setForm({ ...form, specialty: event.target.value })} />
                 <input required className="px-4 py-4 bg-gray-50 border-2 border-transparent rounded-2xl focus:bg-white focus:border-sky-500 text-gray-900" placeholder="Experience" value={form.experience || ''} onChange={(event) => setForm({ ...form, experience: event.target.value })} />
+                <input required className="px-4 py-4 bg-gray-50 border-2 border-transparent rounded-2xl focus:bg-white focus:border-sky-500 text-gray-900" placeholder="Medical registration number" value={form.medicalRegistrationNumber || ''} onChange={(event) => setForm({ ...form, medicalRegistrationNumber: event.target.value })} />
+                <input required className="px-4 py-4 bg-gray-50 border-2 border-transparent rounded-2xl focus:bg-white focus:border-sky-500 text-gray-900" placeholder="Registration council" value={form.registrationCouncil || ''} onChange={(event) => setForm({ ...form, registrationCouncil: event.target.value })} />
+                <input required className="px-4 py-4 bg-gray-50 border-2 border-transparent rounded-2xl focus:bg-white focus:border-sky-500 text-gray-900" placeholder="Qualification" value={form.qualification || ''} onChange={(event) => setForm({ ...form, qualification: event.target.value })} />
                 <input readOnly className="px-4 py-4 bg-gray-100 border-2 border-transparent rounded-2xl text-gray-500 cursor-not-allowed" placeholder="Consultation Fee" value={user.fee ? `Rs. ${user.fee}` : 'Admin controlled'} />
                 <div className="md:col-span-2 rounded-2xl bg-sky-50 border border-sky-100 p-4 text-sm text-sky-800 font-bold">
                   Weekly timings are managed from <Link href="/dashboard/schedule" className="underline">My Schedule - Manage Availability</Link>.
@@ -287,6 +296,9 @@ const StaffProfile: React.FC<{ user: User }> = ({ user: initialUser }) => {
                 <DetailCard label="Department" value={user.department} />
                 <DetailCard label="Specialty" value={user.specialty} />
                 <DetailCard label="Experience" value={user.experience} />
+                <DetailCard label="Qualification" value={user.qualification} />
+                <DetailCard label="Registration Number" value={user.medicalRegistrationNumber} />
+                <DetailCard label="Registration Council" value={user.registrationCouncil} />
                 <DetailCard label="Consultation Fee" value={user.fee ? <span className="inline-flex items-center"><IndianRupee size={16} className="mr-1 text-sky-600" />{user.fee}</span> : null} />
                 <div className="lg:col-span-2">
                   <DetailCard label="Weekly Schedule" value={<span className="inline-flex items-start"><CalendarDays size={16} className="mr-2 mt-1 text-sky-600 shrink-0" />{formatWeeklySchedule(user.weeklySchedule)}</span>} />

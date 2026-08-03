@@ -31,7 +31,7 @@ from .email_service import (
     send_staff_login_otp,
     send_verification_email,
 )
-from .models import Appointment, Department, DoctorAvailability, EmailOTP, Feedback, LabRegistration, UserProfile, UserRole
+from .models import Appointment, Department, DoctorAvailability, EmailOTP, Feedback, LabRegistration, UserProfile, UserRole, allocate_patient_id
 from .permissions import IsAdmin, IsCounter
 from .serializers import (
     AppointmentSerializer,
@@ -215,13 +215,18 @@ def _user_from_token(uid: str, token: str) -> User | None:
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def auth_login(request):
-    email = (request.data.get("email") or "").strip().lower()
+    identifier = (request.data.get("email") or request.data.get("identifier") or "").strip()
     password = request.data.get("password") or ""
 
-    if not email or not password:
-        return Response({"detail": "Email and password are required."}, status=status.HTTP_400_BAD_REQUEST)
+    if not identifier or not password:
+        return Response({"detail": "Email or patient ID and password are required."}, status=status.HTTP_400_BAD_REQUEST)
 
-    user = authenticate(request, username=email, password=password)
+    username = identifier.lower()
+    if identifier.upper().startswith("BHCC"):
+        profile = UserProfile.objects.filter(patient_id=identifier.upper(), role=UserRole.PATIENT).select_related("user").first()
+        username = profile.user.username if profile else identifier.lower()
+
+    user = authenticate(request, username=username, password=password)
     if not user:
         return Response({"detail": "Invalid credentials."}, status=status.HTTP_401_UNAUTHORIZED)
 
@@ -335,6 +340,7 @@ def auth_register_patient(request):
 
     user = User.objects.create_user(username=email, email=email, password=password, first_name=name, is_active=False)
     profile = UserProfile.objects.create(user=user, role=UserRole.PATIENT, name=name, **profile_data)
+    allocate_patient_id(profile)
     _send_patient_verification(user, profile)
     return Response({"verificationRequired": True, "email": email, "detail": "Account created. Check your email to verify it before signing in."}, status=status.HTTP_201_CREATED)
 
@@ -405,6 +411,9 @@ def staff_profile(request):
         profile.department = str(payload.get("department") or "").strip()
         profile.specialty = str(payload.get("specialty") or "").strip()
         profile.experience = str(payload.get("experience") or "").strip()
+        profile.medical_registration_number = str(payload.get("medicalRegistrationNumber") or "").strip()
+        profile.registration_council = str(payload.get("registrationCouncil") or "").strip()
+        profile.qualification = str(payload.get("qualification") or "").strip()
         if "weeklySchedule" in payload:
             weekly_schedule = _weekly_schedule_payload(payload)
             profile.weekly_schedule = weekly_schedule
@@ -804,6 +813,9 @@ def admin_create_doctor(request):
     department = (payload.get("department") or "").strip()
     specialty = (payload.get("specialty") or "").strip()
     experience = (payload.get("experience") or "").strip()
+    medical_registration_number = (payload.get("medicalRegistrationNumber") or "").strip()
+    registration_council = (payload.get("registrationCouncil") or "").strip()
+    qualification = (payload.get("qualification") or "").strip()
     fee = int(payload.get("fee") or 0)
     available_days = payload.get("availableDays") or []
     working_hours = payload.get("workingHours") or {}
@@ -819,7 +831,7 @@ def admin_create_doctor(request):
     }
     salary = int(payload.get("salary") or 0)
 
-    if not (name and email and password and department and specialty and experience and fee > 0 and common_profile["phone_no"]):
+    if not (name and email and password and department and specialty and experience and medical_registration_number and registration_council and qualification and fee > 0 and common_profile["phone_no"]):
         return Response({"detail": "Missing required doctor fields."}, status=status.HTTP_400_BAD_REQUEST)
     if User.objects.filter(username=email).exists():
         return Response({"detail": "Doctor email already exists."}, status=status.HTTP_400_BAD_REQUEST)
@@ -832,6 +844,9 @@ def admin_create_doctor(request):
         department=department,
         specialty=specialty,
         experience=experience,
+        medical_registration_number=medical_registration_number,
+        registration_council=registration_council,
+        qualification=qualification,
         fee=fee,
         salary=salary if salary > 0 else None,
         available_days=available_days,

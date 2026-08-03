@@ -25,6 +25,67 @@ export interface User {
   weeklySchedule?: WeeklySchedule;
   availability?: Record<string, string[]>; // Date (YYYY-MM-DD) -> Array of available time slots (HH:MM)
   patientProfile?: PatientProfileDetails;
+  patientId?: string | null;
+  medicalRegistrationNumber?: string | null;
+  registrationCouncil?: string | null;
+  qualification?: string | null;
+}
+
+export interface AttendanceRecord {
+  id: string;
+  employee: User;
+  date: string;
+  scheduledStart: string;
+  scheduledEnd: string;
+  checkedInAt: string | null;
+  checkedOutAt: string | null;
+  status: 'PRESENT' | 'LATE' | 'HALF_DAY' | 'ABSENT' | 'LEAVE' | 'HOLIDAY';
+  lateMinutes: number;
+  workedMinutes: number;
+  adminNotes: string;
+}
+
+export interface LeaveRequest {
+  id: string;
+  employee: User;
+  leaveType: string;
+  startDate: string;
+  endDate: string;
+  reason: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  createdAt: string;
+}
+
+export interface PrescriptionMedicine {
+  name: string;
+  strength: string;
+  dosageForm: string;
+  dose: string;
+  frequency: string;
+  duration: string;
+  foodInstructions: string;
+  notes: string;
+}
+
+export interface Prescription {
+  id: string;
+  prescriptionNumber: string;
+  version: number;
+  status: 'DRAFT' | 'FINALIZED' | 'SUPERSEDED' | 'NONE';
+  appointmentId: string;
+  appointmentReference?: string;
+  patient: User;
+  doctor: User;
+  appointmentDate?: string;
+  department?: string;
+  symptoms?: string;
+  observations?: string;
+  diagnosis?: string;
+  advice?: string;
+  followUpDate?: string | null;
+  finalizedAt?: string | null;
+  medicines?: PrescriptionMedicine[];
+  tests?: Array<{ name: string; instructions: string }>;
 }
 
 export type WeekDayName = 'Sunday' | 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday';

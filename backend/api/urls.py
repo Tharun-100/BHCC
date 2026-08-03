@@ -1,7 +1,7 @@
 from django.urls import path
 from rest_framework_simplejwt.views import TokenRefreshView
 
-from . import views
+from . import clinical_views, views
 
 urlpatterns = [
     path("auth/login", views.auth_login),
@@ -62,4 +62,26 @@ urlpatterns = [
     path("payments/create-order/", views.payments_create_order),
     path("payments/verify", views.payments_verify),
     path("payments/verify/", views.payments_verify),
+    path("attendance", clinical_views.attendance),
+    path("attendance/", clinical_views.attendance),
+    path("leave-requests", clinical_views.leave_requests),
+    path("leave-requests/", clinical_views.leave_requests),
+    path("admin/attendance", clinical_views.admin_attendance),
+    path("admin/attendance/", clinical_views.admin_attendance),
+    path("admin/attendance/<int:pk>", clinical_views.admin_attendance_detail),
+    path("admin/attendance/<int:pk>/", clinical_views.admin_attendance_detail),
+    path("admin/leave-requests", clinical_views.admin_leave_requests),
+    path("admin/leave-requests/", clinical_views.admin_leave_requests),
+    path("admin/leave-requests/<int:pk>", clinical_views.admin_leave_detail),
+    path("admin/leave-requests/<int:pk>/", clinical_views.admin_leave_detail),
+    path("appointments/<int:appointment_id>/prescription", clinical_views.appointment_prescription),
+    path("appointments/<int:appointment_id>/prescription/", clinical_views.appointment_prescription),
+    path("prescriptions", clinical_views.prescriptions),
+    path("prescriptions/", clinical_views.prescriptions),
+    path("prescriptions/<int:pk>/finalize", clinical_views.finalize_prescription),
+    path("prescriptions/<int:pk>/finalize/", clinical_views.finalize_prescription),
+    path("prescriptions/<int:pk>/amend", clinical_views.amend_prescription),
+    path("prescriptions/<int:pk>/amend/", clinical_views.amend_prescription),
+    path("prescriptions/<int:pk>/pdf", clinical_views.prescription_pdf),
+    path("prescriptions/<int:pk>/pdf/", clinical_views.prescription_pdf),
 ]

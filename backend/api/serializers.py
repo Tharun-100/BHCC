@@ -22,6 +22,10 @@ class UserOutSerializer(serializers.Serializer):
     workingHours = serializers.DictField(child=serializers.CharField(), required=False)
     weeklySchedule = serializers.DictField(required=False)
     patientProfile = serializers.DictField(required=False)
+    patientId = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    medicalRegistrationNumber = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    registrationCouncil = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    qualification = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
 
 def user_to_out(user: User) -> dict:
@@ -52,6 +56,10 @@ def user_to_out(user: User) -> dict:
             "end": getattr(profile, "working_hours_end", "17:00") if profile else "17:00",
         },
         "weeklySchedule": weekly_schedule,
+        "patientId": getattr(profile, "patient_id", None),
+        "medicalRegistrationNumber": getattr(profile, "medical_registration_number", "") or None,
+        "registrationCouncil": getattr(profile, "registration_council", "") or None,
+        "qualification": getattr(profile, "qualification", "") or None,
     }
     if profile:
         data["patientProfile"] = {

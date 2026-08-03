@@ -15,7 +15,51 @@ from .email_service import (
     send_contact_notification,
     send_staff_login_otp,
 )
-from .models import Appointment, Department, UserProfile, UserRole
+from .models import Appointment, AttendanceAuditLog, AttendanceRecord, Department, Prescription, UserProfile, UserRole, allocate_patient_id
+
+
+@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend", DEFAULT_FROM_EMAIL="Bhaktivedanta Healthcare <noreply@bhaktivedantahealthcare.tech>", SUPPORT_EMAIL="support@bhaktivedantahealthcare.tech", FRONTEND_URL="https://example.test")
+class ClinicalWorkflowTests(TestCase):
+    def setUp(self) -> None:
+        self.patient = User.objects.create_user(username="patient-id@example.com", email="patient-id@example.com", password="safe-test-password")
+        self.patient_profile = UserProfile.objects.create(user=self.patient, role=UserRole.PATIENT, name="Patient")
+        self.doctor = User.objects.create_user(username="rx-doctor@example.com", email="rx-doctor@example.com", password="safe-test-password")
+        UserProfile.objects.create(user=self.doctor, role=UserRole.DOCTOR, name="Doctor", specialty="Medicine", qualification="MBBS", medical_registration_number="WB-123", registration_council="WBMC")
+        self.admin = User.objects.create_user(username="admin-clinical@example.com", password="safe-test-password")
+        UserProfile.objects.create(user=self.admin, role=UserRole.ADMIN, name="Admin")
+        self.appointment = Appointment.objects.create(patient=self.patient, doctor=self.doctor, patient_name="Patient", doctor_name="Doctor", department="Medicine", date=date.today(), time="10:00", fee=500)
+
+    def test_patient_id_is_sequential_and_can_be_used_to_login(self) -> None:
+        self.assertEqual(allocate_patient_id(self.patient_profile), "BHCC000000001")
+        second = User.objects.create_user(username="second@example.com", password="safe-test-password")
+        second_profile = UserProfile.objects.create(user=second, role=UserRole.PATIENT)
+        self.assertEqual(allocate_patient_id(second_profile), "BHCC000000002")
+        response = APIClient().post("/api/auth/login/", {"email": "BHCC000000001", "password": "safe-test-password"}, format="json")
+        self.assertEqual(response.status_code, 200)
+
+    def test_attendance_and_admin_correction_create_audit_record(self) -> None:
+        client = APIClient(); client.force_authenticate(self.doctor)
+        response = client.post("/api/attendance/", {"action": "CHECK_IN"}, format="json")
+        self.assertEqual(response.status_code, 200)
+        row = AttendanceRecord.objects.get(employee=self.doctor)
+        client.force_authenticate(self.admin)
+        response = client.patch(f"/api/admin/attendance/{row.pk}/", {"status": "PRESENT", "adminNotes": "Approved correction", "reason": "Clock discrepancy"}, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(AttendanceAuditLog.objects.filter(attendance=row, changed_by=self.admin).exists())
+
+    def test_doctor_finalizes_prescription_and_patient_can_download_pdf(self) -> None:
+        client = APIClient(); client.force_authenticate(self.doctor)
+        response = client.put(f"/api/appointments/{self.appointment.pk}/prescription/", {"diagnosis": "Seasonal allergy", "medicines": [{"name": "Cetirizine", "dose": "1 tablet", "frequency": "Night", "duration": "5 days"}], "tests": []}, format="json")
+        self.assertEqual(response.status_code, 200)
+        prescription_id = response.data["id"]
+        response = client.post(f"/api/prescriptions/{prescription_id}/finalize/", {}, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Prescription.objects.get(pk=prescription_id).status, Prescription.Status.FINALIZED)
+        client.force_authenticate(self.patient)
+        self.assertEqual(client.get("/api/prescriptions/").status_code, 200)
+        pdf = client.get(f"/api/prescriptions/{prescription_id}/pdf/")
+        self.assertEqual(pdf.status_code, 200)
+        self.assertEqual(pdf["Content-Type"], "application/pdf")
 
 
 EMAIL_TEST_SETTINGS = {
