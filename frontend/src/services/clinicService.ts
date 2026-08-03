@@ -109,6 +109,16 @@ export const getAdminDashboardSummary = async (): Promise<AdminDashboardSummary>
   });
 };
 
+export const listStaffAccounts = async (): Promise<User[]> => {
+  const token = authTokenOrThrow();
+  return apiFetch<User[]>('/api/admin/staff-accounts/', { method: 'GET', authToken: token });
+};
+
+export const deleteStaffAccount = async (id: string): Promise<void> => {
+  const token = authTokenOrThrow();
+  await apiFetch<void>(`/api/admin/accounts/${encodeURIComponent(id)}/`, { method: 'DELETE', authToken: token });
+};
+
 export const updateAppointmentStatus = async (appointmentId: string, status: Appointment['status']): Promise<Appointment> => {
   const token = authTokenOrThrow();
   return apiFetch<Appointment>(`/api/appointments/${encodeURIComponent(appointmentId)}/`, {

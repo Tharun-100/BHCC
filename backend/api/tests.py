@@ -52,6 +52,7 @@ class TransactionalEmailTests(TestCase):
 
         self.assertTrue(result.delivered)
         self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].subject, "BHCC admin login code")
         self.assertIn("123456", mail.outbox[0].body)
         self.assertEqual(len(mail.outbox[0].alternatives), 1)
         self.assertEqual(mail.outbox[0].reply_to, ["support@bhaktivedantahealthcare.tech"])
@@ -228,6 +229,26 @@ class AdminDashboardTests(TestCase):
         self.assertEqual(mail.outbox[-1].to, ["admin@example.com"])
         self.assertIn("disabled", mail.outbox[-1].subject.lower())
 
+    def test_admin_can_delete_staff_but_not_their_own_account(self) -> None:
+        counter = User.objects.create_user(username="counter-delete@example.com", email="counter-delete@example.com", password="counter-password")
+        UserProfile.objects.create(user=counter, role=UserRole.COUNTER, name="Delete Counter")
+
+        response = self.client.delete(f"/api/admin/accounts/{counter.id}/")
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(User.objects.filter(pk=counter.id).exists())
+
+        own_response = self.client.delete(f"/api/admin/accounts/{self.admin.id}/")
+        self.assertEqual(own_response.status_code, 400)
+        self.assertTrue(User.objects.filter(pk=self.admin.id).exists())
+
+    def test_admin_staff_list_excludes_patients_and_doctors(self) -> None:
+        response = self.client.get("/api/admin/staff-accounts/")
+        self.assertEqual(response.status_code, 200)
+        returned_ids = {row["id"] for row in response.data}
+        self.assertIn(str(self.admin.id), returned_ids)
+        self.assertNotIn(str(self.patient.id), returned_ids)
+        self.assertNotIn(str(self.doctor.id), returned_ids)
+
 
 @override_settings(**EMAIL_TEST_SETTINGS)
 class AccountSecurityEmailTests(TestCase):
@@ -257,6 +278,14 @@ class AccountSecurityEmailTests(TestCase):
         self.patient.refresh_from_db()
         self.assertTrue(self.patient.check_password("New-safe-password-95"))
         self.assertIn("password was changed", mail.outbox[-1].subject.lower())
+
+    def test_password_reset_confirm_without_trailing_slash_does_not_redirect(self) -> None:
+        response = self.client.post(
+            "/api/auth/password-reset/confirm",
+            {"uid": "invalid", "token": "invalid", "password": "Safe-password-98"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
 
     def test_verification_token_activates_once_and_resend_obeys_cooldown(self) -> None:
         from django.contrib.auth.tokens import default_token_generator

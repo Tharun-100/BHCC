@@ -67,7 +67,7 @@ def _send_templated_email(
 
 def send_staff_login_otp(*, recipient: str, recipient_name: str, code: str) -> EmailDeliveryResult:
     return _send_templated_email(
-        subject="Your BHCC staff login code",
+        subject="BHCC admin login code",
         recipients=[recipient],
         template_name="staff_login_otp",
         context={"recipient_name": recipient_name, "code": code, "expires_minutes": 10},

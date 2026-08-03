@@ -17,5 +17,5 @@ export default function Page() {
 
   if (isLoading || !user || user.role !== UserRole.ADMIN) return null;
 
-  return <AdminStaff />;
+  return <AdminStaff currentUserId={user.id} />;
 }

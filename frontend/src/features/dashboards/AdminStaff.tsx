@@ -1,13 +1,16 @@
 import React from 'react';
-import { UserRole } from '@/types';
+import { User, UserRole } from '@/types';
 import { apiFetch } from '@/lib/api';
 import { getAccessToken } from '@/lib/storage';
-import { Shield, UserPlus } from 'lucide-react';
+import { Shield, Trash2, UserPlus } from 'lucide-react';
+import { deleteStaffAccount, listStaffAccounts } from '@/services/clinicService';
 
-const AdminStaff: React.FC = () => {
+const AdminStaff: React.FC<{ currentUserId: string }> = ({ currentUserId }) => {
   const [isCreating, setIsCreating] = React.useState(false);
   const [message, setMessage] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+  const [staffAccounts, setStaffAccounts] = React.useState<User[]>([]);
+  const [deletingId, setDeletingId] = React.useState<string | null>(null);
   const [form, setForm] = React.useState({
     role: UserRole.COUNTER,
     name: '',
@@ -20,6 +23,14 @@ const AdminStaff: React.FC = () => {
     salary: '',
     religion: ''
   });
+
+  const loadStaff = React.useCallback(async () => {
+    setStaffAccounts(await listStaffAccounts());
+  }, []);
+
+  React.useEffect(() => {
+    loadStaff().catch((err) => setError(err instanceof Error ? err.message : 'Could not load staff accounts.'));
+  }, [loadStaff]);
 
   const handleCreateStaff = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -51,6 +62,7 @@ const AdminStaff: React.FC = () => {
           religion: form.religion
         })
       });
+      await loadStaff();
 
       setMessage(`${form.role === UserRole.ADMIN ? 'Admin' : form.role === UserRole.COUNTER ? 'Counter' : form.staffType} account created successfully.`);
       setForm({
@@ -69,6 +81,25 @@ const AdminStaff: React.FC = () => {
       setError(err instanceof Error ? err.message : 'Could not create staff account.');
     } finally {
       setIsCreating(false);
+    }
+  };
+
+  const handleDeleteStaff = async (staff: User) => {
+    const confirmed = window.confirm(
+      `CAUTION: Permanently delete ${staff.name} (${staff.email})?\n\nThis removes the staff login and profile and cannot be undone.`
+    );
+    if (!confirmed) return;
+    setDeletingId(staff.id);
+    setMessage(null);
+    setError(null);
+    try {
+      await deleteStaffAccount(staff.id);
+      setStaffAccounts((current) => current.filter((account) => account.id !== staff.id));
+      setMessage(`${staff.name}'s staff account was permanently deleted.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not delete staff account.');
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -113,6 +144,27 @@ const AdminStaff: React.FC = () => {
             {isCreating ? 'Creating staff...' : 'Create Staff'}
           </button>
         </form>
+      </div>
+
+      <div className="mt-8 bg-white rounded-[2.5rem] border border-gray-100 shadow-sm overflow-hidden">
+        <div className="px-6 md:px-8 py-5 border-b border-gray-100">
+          <h2 className="text-xl font-bold text-gray-900">Existing Staff Accounts</h2>
+          <p className="text-sm text-gray-500">Deleting an account is permanent. Your currently signed-in administrator account is protected by the server.</p>
+        </div>
+        <div className="divide-y divide-gray-100">
+          {staffAccounts.map((staff) => (
+            <div key={staff.id} className="px-6 md:px-8 py-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <p className="font-bold text-gray-900">{staff.name}</p>
+                <p className="text-sm text-gray-500">{staff.email} · {staff.role}</p>
+              </div>
+              <button type="button" onClick={() => handleDeleteStaff(staff)} disabled={deletingId === staff.id || staff.id === currentUserId} title={staff.id === currentUserId ? 'You cannot delete your currently signed-in administrator account.' : 'Permanently delete this staff account'} className="inline-flex items-center justify-center px-4 py-2 border border-red-200 text-red-600 rounded-xl font-bold hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed">
+                <Trash2 size={16} className="mr-2" /> {staff.id === currentUserId ? 'Current account' : deletingId === staff.id ? 'Deleting…' : 'Delete permanently'}
+              </button>
+            </div>
+          ))}
+          {staffAccounts.length === 0 && <p className="px-8 py-8 text-sm text-gray-500">No staff accounts found.</p>}
+        </div>
       </div>
     </div>
   );

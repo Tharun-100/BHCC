@@ -136,6 +136,6 @@ export const requestPasswordReset = async (email: string): Promise<void> => {
   });
 };
 
-export const verifyEmail = (uid: string, token: string) => apiFetch<{ ok: true }>('/api/auth/verify-email/', { method: 'POST', body: JSON.stringify({ uid, token }) });
-export const resendVerification = (email: string) => apiFetch<{ ok: true }>('/api/auth/resend-verification/', { method: 'POST', body: JSON.stringify({ email }) });
-export const confirmPasswordReset = (uid: string, token: string, password: string) => apiFetch<{ ok: true }>('/api/auth/password-reset/confirm/', { method: 'POST', body: JSON.stringify({ uid, token, password }) });
+export const verifyEmail = (uid: string, token: string) => apiFetch<{ ok: true }>('/api/auth/verify-email', { method: 'POST', body: JSON.stringify({ uid, token }) });
+export const resendVerification = (email: string) => apiFetch<{ ok: true }>('/api/auth/resend-verification', { method: 'POST', body: JSON.stringify({ email }) });
+export const confirmPasswordReset = (uid: string, token: string, password: string) => apiFetch<{ ok: true }>('/api/auth/password-reset/confirm', { method: 'POST', body: JSON.stringify({ uid, token, password }) });

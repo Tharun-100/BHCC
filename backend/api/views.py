@@ -881,10 +881,21 @@ def admin_create_staff(request):
     return Response({"uid": str(user.id), "email": email, "role": role}, status=status.HTTP_201_CREATED)
 
 
-@api_view(["PATCH"])
+@api_view(["PATCH", "DELETE"])
 @permission_classes([IsAuthenticated, IsAdmin])
 def admin_update_account(request, pk: int):
     user = get_object_or_404(User.objects.select_related("profile"), pk=pk)
+    if request.method == "DELETE":
+        if user.pk == request.user.pk:
+            return Response({"detail": "You cannot delete your own administrator account."}, status=status.HTTP_400_BAD_REQUEST)
+        role = getattr(user.profile, "role", None)
+        if role not in {UserRole.ADMIN, UserRole.COUNTER, UserRole.STAFF}:
+            return Response({"detail": "Only Admin, Counter, and general staff accounts can be deleted here."}, status=status.HTTP_400_BAD_REQUEST)
+        identity = user.email or user.username
+        user.delete()
+        transaction.on_commit(lambda: send_admin_notification(event="Staff account deleted", summary=f"The {role} account {identity} was permanently deleted by an administrator."))
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
     if user.pk == request.user.pk and request.data.get("isActive") is False:
         return Response({"detail": "You cannot disable your own account."}, status=status.HTTP_400_BAD_REQUEST)
     next_role = None
@@ -914,6 +925,13 @@ def admin_update_account(request, pk: int):
     for event, summary in notifications:
         transaction.on_commit(lambda event=event, summary=summary: send_admin_notification(event=event, summary=summary))
     return Response(user_to_out(user))
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, IsAdmin])
+def admin_staff_accounts(request):
+    users = User.objects.filter(profile__role__in=[UserRole.ADMIN, UserRole.COUNTER, UserRole.STAFF]).select_related("profile").order_by("profile__name", "username")
+    return Response([user_to_out(user) for user in users])
 
 
 @api_view(["POST"])

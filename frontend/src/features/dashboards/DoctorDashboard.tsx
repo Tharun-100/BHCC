@@ -26,7 +26,11 @@ const DoctorDashboard: React.FC<{ user: User }> = ({ user }) => {
   }, [user.id]);
 
   const completed = appointments.filter(a => a.status === 'Completed');
-  const upcoming = appointments.filter(a => a.status === 'Upcoming');
+  const today = new Date();
+  const todayKey = [today.getFullYear(), String(today.getMonth() + 1).padStart(2, '0'), String(today.getDate()).padStart(2, '0')].join('-');
+  const todayAppointments = appointments.filter((appointment) => appointment.date === todayKey);
+  const pendingToday = todayAppointments.filter((appointment) => appointment.status === 'Upcoming');
+  const uniquePatients = new Set(appointments.map((appointment) => appointment.patientId)).size;
   const totalRevenue = completed.reduce((acc, curr) => acc + curr.fee, 0);
   const doctorEarnings = totalRevenue * 0.5;
 
@@ -43,14 +47,14 @@ const DoctorDashboard: React.FC<{ user: User }> = ({ user }) => {
             <Users size={24} />
           </div>
           <p className="text-sm text-gray-500 font-bold mb-1">Total Patients</p>
-          <p className="text-2xl font-black text-gray-900">1,248</p>
+          <p className="text-2xl font-black text-gray-900">{uniquePatients.toLocaleString('en-IN')}</p>
         </div>
         <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
           <div className="w-12 h-12 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center mb-4">
             <Clock size={24} />
           </div>
-          <p className="text-sm text-gray-500 font-bold mb-1">Clinic Slots Today</p>
-          <p className="text-2xl font-black text-gray-900">{upcoming.length} Pending</p>
+          <p className="text-sm text-gray-500 font-bold mb-1">Appointments Today</p>
+          <p className="text-2xl font-black text-gray-900">{pendingToday.length} Pending</p>
         </div>
         <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
           <div className="w-12 h-12 bg-green-50 text-green-600 rounded-2xl flex items-center justify-center mb-4">
@@ -63,8 +67,8 @@ const DoctorDashboard: React.FC<{ user: User }> = ({ user }) => {
           <div className="w-12 h-12 bg-purple-50 text-purple-600 rounded-2xl flex items-center justify-center mb-4">
             <CheckCircle size={24} />
           </div>
-          <p className="text-sm text-gray-500 font-bold mb-1">Patient Satisfaction</p>
-          <p className="text-2xl font-black text-gray-900">98%</p>
+          <p className="text-sm text-gray-500 font-bold mb-1">Completed Consultations</p>
+          <p className="text-2xl font-black text-gray-900">{completed.length.toLocaleString('en-IN')}</p>
         </div>
       </div>
 
@@ -78,7 +82,7 @@ const DoctorDashboard: React.FC<{ user: User }> = ({ user }) => {
               </span>
             </div>
             <div className="divide-y divide-gray-100">
-              {appointments.map(app => (
+              {todayAppointments.map(app => (
                 <div key={app.id} className="px-8 py-6 flex flex-col sm:flex-row sm:items-center justify-between group hover:bg-gray-50 transition">
                   <div className="flex items-center space-x-6">
                     <div className="text-sky-600 font-black text-lg w-16">{app.time}</div>
@@ -96,6 +100,7 @@ const DoctorDashboard: React.FC<{ user: User }> = ({ user }) => {
                   </div>
                 </div>
               ))}
+              {todayAppointments.length === 0 && <p className="px-8 py-10 text-center text-sm font-bold text-gray-400">No appointments scheduled for today.</p>}
             </div>
           </div>
         </div>

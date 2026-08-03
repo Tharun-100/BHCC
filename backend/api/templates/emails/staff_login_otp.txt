@@ -1,6 +1,6 @@
-Hello {{ recipient_name|default:"Staff member" }},
+Hello {{ recipient_name|default:"Administrator" }},
 
-Your {{ clinic_name }} staff login code is:
+Your BHCC admin login code is:
 
 {{ code }}
 

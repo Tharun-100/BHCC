@@ -6,8 +6,9 @@
       <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:600px;background:#fff;border-radius:16px;overflow:hidden">
         <tr><td style="background:#087f8c;color:#fff;padding:24px 32px"><strong style="font-size:20px">{{ clinic_name }}</strong></td></tr>
         <tr><td style="padding:32px">
-          <p>Hello {{ recipient_name|default:"Staff member" }},</p>
-          <p>Use this one-time code to complete your staff sign-in:</p>
+          <p>Hello {{ recipient_name|default:"Administrator" }},</p>
+          <h1 style="font-size:24px;color:#153247">BHCC admin login code</h1>
+          <p>Use this one-time code to complete your administrator sign-in:</p>
           <p style="font-size:32px;letter-spacing:8px;font-weight:700;color:#087f8c;text-align:center;background:#edf8f8;padding:18px;border-radius:12px">{{ code }}</p>
           <p>This code expires in {{ expires_minutes }} minutes and can be used only once.</p>
           <p style="color:#5d7180">If you did not attempt to sign in, do not share this code and contact {% if support_email %}<a href="mailto:{{ support_email }}">{{ support_email }}</a>{% else %}the clinic administrator{% endif %}.</p>
