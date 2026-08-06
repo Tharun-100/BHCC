@@ -61,6 +61,8 @@ services:
         NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${NEXT_PUBLIC_GOOGLE_CLIENT_ID:-}
         BACKEND_INTERNAL_URL: http://backend:8000
     restart: unless-stopped
+    environment:
+      BACKEND_INTERNAL_URL: http://backend:8000
     expose:
       - "3000"
     depends_on:

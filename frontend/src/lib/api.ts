@@ -82,8 +82,9 @@ export async function apiFetch<T>(
       if (renewedAccessToken) res = await performRequest(renewedAccessToken);
     }
   } catch (error) {
+    const reason = error instanceof Error && error.message ? ` (${error.message})` : '';
     throw new ApiError(
-      `Cannot connect to the backend through ${getApiBaseUrl()}. Please make sure Django and PostgreSQL are running.`,
+      `The browser could not reach ${url}${reason}. Please retry or sign in again.`,
       0,
       error
     );
