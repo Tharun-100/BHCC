@@ -6,6 +6,7 @@ from . import clinical_views, views
 urlpatterns = [
     path("auth/login", views.auth_login),
     path("auth/login/", views.auth_login),
+    path("auth/google/", views.auth_google),
     path("auth/staff/request-otp", views.auth_staff_request_otp),
     path("auth/staff/request-otp/", views.auth_staff_request_otp),
     path("auth/staff/verify-otp", views.auth_staff_verify_otp),

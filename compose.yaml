@@ -42,6 +42,7 @@ services:
       ADMIN_NOTIFICATION_EMAIL: ${ADMIN_NOTIFICATION_EMAIL:-}
       CLINIC_TO_EMAIL: ${CLINIC_TO_EMAIL:-bhaktivedantahealthcarecentre@gmail.com}
       CLINIC_LOCATION: ${CLINIC_LOCATION:-Bhaktivedanta Healthcare Centre, Newtown, Kolkata}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
     depends_on:
       database:
         condition: service_healthy
@@ -57,6 +58,7 @@ services:
       context: ./frontend
       args:
         NEXT_PUBLIC_RAZORPAY_KEY_ID: ${NEXT_PUBLIC_RAZORPAY_KEY_ID:-}
+        NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${NEXT_PUBLIC_GOOGLE_CLIENT_ID:-}
         BACKEND_INTERNAL_URL: http://backend:8000
     restart: unless-stopped
     expose:

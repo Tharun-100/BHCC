@@ -122,8 +122,13 @@ export const updateStaffProfile = async (payload: StaffProfilePayload): Promise<
   });
 };
 
-export const loginWithGoogle = async (): Promise<User> => {
-  throw new Error('Google login is not configured in the BHCC (Django) stack yet.');
+export const loginWithGoogle = async (credential: string): Promise<User> => {
+  const data = await apiFetch<AuthResponse>('/api/auth/google/', {
+    method: 'POST',
+    body: JSON.stringify({ credential })
+  });
+  setTokens(data.access, data.refresh);
+  return data.user;
 };
 
 export const logoutUser = async (): Promise<void> => {

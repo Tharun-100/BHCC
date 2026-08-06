@@ -37,6 +37,25 @@ class ClinicalWorkflowTests(TestCase):
         response = APIClient().post("/api/auth/login/", {"email": "BHCC000000001", "password": "safe-test-password"}, format="json")
         self.assertEqual(response.status_code, 200)
 
+    @override_settings(GOOGLE_CLIENT_ID="google-client-id.apps.googleusercontent.com")
+    @patch("google.oauth2.id_token.verify_oauth2_token")
+    def test_google_login_creates_verified_patient_with_bhcc_id(self, verify_token) -> None:
+        verify_token.return_value = {"email": "google.patient@example.com", "name": "Google Patient", "email_verified": True}
+        response = APIClient().post("/api/auth/google/", {"credential": "signed-google-id-token"}, format="json")
+        self.assertEqual(response.status_code, 200)
+        profile = UserProfile.objects.get(user__username="google.patient@example.com")
+        self.assertEqual(profile.role, UserRole.PATIENT)
+        self.assertTrue(profile.patient_id.startswith("BHCC"))
+        self.assertIsNotNone(profile.email_verified_at)
+        self.assertIn("access", response.data)
+
+    @override_settings(GOOGLE_CLIENT_ID="google-client-id.apps.googleusercontent.com")
+    @patch("google.oauth2.id_token.verify_oauth2_token")
+    def test_google_login_cannot_use_staff_email_in_patient_portal(self, verify_token) -> None:
+        verify_token.return_value = {"email": self.doctor.email, "name": "Doctor", "email_verified": True}
+        response = APIClient().post("/api/auth/google/", {"credential": "signed-google-id-token"}, format="json")
+        self.assertEqual(response.status_code, 403)
+
     def test_attendance_and_admin_correction_create_audit_record(self) -> None:
         client = APIClient(); client.force_authenticate(self.doctor)
         response = client.post("/api/attendance/", {"action": "CHECK_IN"}, format="json")

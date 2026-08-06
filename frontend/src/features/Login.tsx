@@ -1,10 +1,24 @@
 import React, { useState, useEffect } from 'react';
+import Script from 'next/script';
 import { PatientRegistrationPayload, UserRole } from '../types';
-import { User as UserIcon, Mail, Lock, Loader2, Chrome, MapPin, Phone, Briefcase, Heart, Info } from 'lucide-react';
+import { User as UserIcon, Mail, Lock, Loader2, MapPin, Phone, Briefcase, Heart, Info } from 'lucide-react';
 import { CLINIC_NAME, PRABHUPADA_BOOK_LISTS } from '../constants';
 import { loginWithEmail, loginWithGoogle, logoutUser, registerPatientWithEmail, requestPasswordReset } from '../services/authService';
 import { useAuth } from '@/providers/AuthProvider';
 import { useRouter, useSearchParams } from 'next/navigation';
+
+declare global {
+  interface Window {
+    google?: {
+      accounts?: {
+        id?: {
+          initialize: (options: { client_id: string; callback: (response: { credential?: string }) => void }) => void;
+          renderButton: (element: HTMLElement, options: Record<string, string | number>) => void;
+        };
+      };
+    };
+  }
+}
 
 const emptyRegistrationForm: PatientRegistrationPayload = {
   name: '',
@@ -64,6 +78,8 @@ const Login: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [formData, setFormData] = useState<PatientRegistrationPayload>(emptyRegistrationForm);
+  const googleButtonRef = React.useRef<HTMLDivElement>(null);
+  const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '';
   const selectedReligion = formData.religion.trim().toLowerCase();
   const hasSelectedReligion = Boolean(selectedReligion);
   const canShowSpiritualFields = hasSelectedReligion && !spiritualFieldsDisabledFor.includes(selectedReligion);
@@ -142,13 +158,13 @@ const Login: React.FC = () => {
     }
   };
 
-  const handleGoogleLogin = async () => {
+  const handleGoogleLogin = async (credential: string) => {
     setError(null);
     setSuccessMessage(null);
     setIsLoading(true);
 
     try {
-      const nextUser = await loginWithGoogle();
+      const nextUser = await loginWithGoogle(credential);
 
       if (nextUser.role !== UserRole.PATIENT) {
         await logoutUser();
@@ -166,8 +182,26 @@ const Login: React.FC = () => {
     }
   };
 
+  const renderGoogleButton = React.useCallback(() => {
+    if (!googleClientId || !googleButtonRef.current || !window.google?.accounts?.id) return;
+    googleButtonRef.current.innerHTML = '';
+    window.google.accounts.id.initialize({
+      client_id: googleClientId,
+      callback: (response: { credential?: string }) => {
+        if (response.credential) handleGoogleLogin(response.credential);
+        else setError('Google did not return a login credential. Please try again.');
+      }
+    });
+    window.google.accounts.id.renderButton(googleButtonRef.current, {
+      theme: 'outline', size: 'large', width: 360, text: isRegistering ? 'signup_with' : 'continue_with', shape: 'pill'
+    });
+  }, [googleClientId, isRegistering]);
+
+  useEffect(() => { renderGoogleButton(); }, [renderGoogleButton]);
+
   return (
     <div className="min-h-screen bg-soft-gradient flex items-center justify-center py-12 px-4 animate-in slide-in-from-bottom-4 duration-500">
+      <Script src="https://accounts.google.com/gsi/client" strategy="afterInteractive" onLoad={renderGoogleButton} />
       <div className={`${isRegistering ? 'max-w-4xl' : 'max-w-md'} w-full bg-white rounded-[2.5rem] shadow-2xl shadow-sky-100 p-8 lg:p-12 border border-gray-100 relative overflow-hidden`}>
         <div className="absolute -top-12 -right-12 w-40 h-40 bg-sky-50 rounded-full opacity-50"></div>
 
@@ -195,14 +229,7 @@ const Login: React.FC = () => {
           )}
 
           {!isResetMode && (
-            <button
-              onClick={handleGoogleLogin}
-              disabled={isLoading}
-              className="w-full flex items-center justify-center space-x-3 py-4 border-2 border-gray-100 rounded-2xl font-bold text-gray-700 hover:bg-gray-50 hover:border-sky-200 transition-all disabled:opacity-50"
-            >
-              {isLoading ? <Loader2 className="animate-spin text-sky-600" size={20} /> : <Chrome className="text-sky-600" size={20} />}
-              <span>{isRegistering ? 'Sign up with Google' : 'Continue with Google'}</span>
-            </button>
+            <div className="flex justify-center min-h-[44px]">{googleClientId ? <div ref={googleButtonRef} /> : <p className="text-sm text-amber-700">Google login will be available after its client ID is configured.</p>}</div>
           )}
 
           {!isResetMode && (

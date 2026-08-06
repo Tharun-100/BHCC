@@ -240,6 +240,63 @@ def auth_login(request):
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
+def auth_google(request):
+    credential = str(request.data.get("credential") or "").strip()
+    if not settings.GOOGLE_CLIENT_ID:
+        return Response({"detail": "Google patient login is not configured."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+    if not credential:
+        return Response({"detail": "Google credential is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        from google.auth.transport import requests as google_requests
+        from google.oauth2 import id_token
+        claims = id_token.verify_oauth2_token(credential, google_requests.Request(), settings.GOOGLE_CLIENT_ID)
+    except (ValueError, TypeError):
+        return Response({"detail": "Google authentication could not be verified."}, status=status.HTTP_401_UNAUTHORIZED)
+
+    email = str(claims.get("email") or "").strip().lower()
+    name = str(claims.get("name") or "").strip() or email.split("@", 1)[0]
+    if not email or claims.get("email_verified") is not True:
+        return Response({"detail": "A verified Google email address is required."}, status=status.HTTP_401_UNAUTHORIZED)
+
+    with transaction.atomic():
+        user = User.objects.select_for_update().filter(Q(username__iexact=email) | Q(email__iexact=email)).select_related("profile").first()
+        if user:
+            profile = _ensure_profile(user)
+            if profile.role != UserRole.PATIENT:
+                return Response({"detail": "This Google email belongs to a staff account. Please use Staff Login."}, status=status.HTTP_403_FORBIDDEN)
+            user_fields = []
+            if not user.is_active:
+                user.is_active = True
+                user_fields.append("is_active")
+            if not user.email:
+                user.email = email
+                user_fields.append("email")
+            if user_fields:
+                user.save(update_fields=user_fields)
+            profile_fields = []
+            if not profile.name:
+                profile.name = name
+                profile_fields.append("name")
+            if not profile.email_verified_at:
+                profile.email_verified_at = timezone.now()
+                profile_fields.append("email_verified_at")
+            if profile_fields:
+                profile.save(update_fields=profile_fields)
+        else:
+            user = User.objects.create_user(username=email, email=email, first_name=name)
+            user.set_unusable_password()
+            user.save(update_fields=["password"])
+            profile = UserProfile.objects.create(user=user, role=UserRole.PATIENT, name=name, email_verified_at=timezone.now())
+        allocate_patient_id(profile)
+
+    data = _token_pair(user)
+    data["user"] = user_to_out(user)
+    return Response(data)
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
 def auth_staff_request_otp(request):
     email = (request.data.get("email") or "").strip().lower()
     password = request.data.get("password") or ""
