@@ -22,7 +22,7 @@ export const listDoctors = async (): Promise<User[]> => apiFetch<User[]>('/api/d
 
 export const updateDoctorWeeklySchedule = async (doctorId: string, weeklySchedule: WeeklySchedule): Promise<User> => {
   const token = authTokenOrThrow();
-  return apiFetch<User>(`/api/admin/doctors/${encodeURIComponent(doctorId)}/schedule/`, {
+  return apiFetch<User>(`/api/management/doctors/${encodeURIComponent(doctorId)}/schedule/`, {
     method: 'PATCH',
     authToken: token,
     body: JSON.stringify({ weeklySchedule })
@@ -103,7 +103,7 @@ export interface AdminDashboardSummary {
 
 export const getAdminDashboardSummary = async (): Promise<AdminDashboardSummary> => {
   const token = authTokenOrThrow();
-  return apiFetch<AdminDashboardSummary>('/api/admin/dashboard/', {
+  return apiFetch<AdminDashboardSummary>('/api/management/dashboard/', {
     method: 'GET',
     authToken: token
   });
@@ -111,24 +111,24 @@ export const getAdminDashboardSummary = async (): Promise<AdminDashboardSummary>
 
 export const listStaffAccounts = async (): Promise<User[]> => {
   const token = authTokenOrThrow();
-  return apiFetch<User[]>('/api/admin/staff-accounts/', { method: 'GET', authToken: token });
+  return apiFetch<User[]>('/api/management/staff-accounts/', { method: 'GET', authToken: token });
 };
 
 export const deleteStaffAccount = async (id: string): Promise<void> => {
   const token = authTokenOrThrow();
-  await apiFetch<void>(`/api/admin/accounts/${encodeURIComponent(id)}/`, { method: 'DELETE', authToken: token });
+  await apiFetch<void>(`/api/management/accounts/${encodeURIComponent(id)}/`, { method: 'DELETE', authToken: token });
 };
 
 export const listAllAccounts = async (): Promise<User[]> => {
   const token = getAccessToken();
   if (!token) throw new Error('Not authenticated.');
-  return apiFetch<User[]>('/api/admin/accounts/', { method: 'GET', authToken: token });
+  return apiFetch<User[]>('/api/management/accounts/', { method: 'GET', authToken: token });
 };
 
 export const setAccountActive = async (id: string, isActive: boolean): Promise<User> => {
   const token = getAccessToken();
   if (!token) throw new Error('Not authenticated.');
-  return apiFetch<User>(`/api/admin/accounts/${encodeURIComponent(id)}/`, { method: 'PATCH', authToken: token, body: JSON.stringify({ isActive }) });
+  return apiFetch<User>(`/api/management/accounts/${encodeURIComponent(id)}/`, { method: 'PATCH', authToken: token, body: JSON.stringify({ isActive }) });
 };
 
 export const updateAppointmentStatus = async (appointmentId: string, status: Appointment['status']): Promise<Appointment> => {

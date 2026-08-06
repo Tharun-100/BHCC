@@ -12,10 +12,10 @@ export const listMyAttendance = () => apiFetch<AttendanceRecord[]>('/api/attenda
 export const attendanceAction = (action: 'CHECK_IN' | 'CHECK_OUT') => apiFetch<AttendanceRecord>('/api/attendance/', { method: 'POST', authToken: token(), body: JSON.stringify({ action }) });
 export const listMyLeaveRequests = () => apiFetch<LeaveRequest[]>('/api/leave-requests/', { method: 'GET', authToken: token() });
 export const createLeaveRequest = (payload: { leaveType: string; startDate: string; endDate: string; reason: string }) => apiFetch<LeaveRequest>('/api/leave-requests/', { method: 'POST', authToken: token(), body: JSON.stringify(payload) });
-export const listAdminAttendance = (month: string) => apiFetch<AttendanceRecord[]>(`/api/admin/attendance/?month=${encodeURIComponent(month)}`, { method: 'GET', authToken: token() });
-export const correctAttendance = (id: string, payload: { status: AttendanceRecord['status']; adminNotes: string; reason: string }) => apiFetch<AttendanceRecord>(`/api/admin/attendance/${id}/`, { method: 'PATCH', authToken: token(), body: JSON.stringify(payload) });
-export const listAdminLeaveRequests = () => apiFetch<LeaveRequest[]>('/api/admin/leave-requests/', { method: 'GET', authToken: token() });
-export const reviewLeaveRequest = (id: string, status: 'APPROVED' | 'REJECTED') => apiFetch<LeaveRequest>(`/api/admin/leave-requests/${id}/`, { method: 'PATCH', authToken: token(), body: JSON.stringify({ status }) });
+export const listAdminAttendance = (month: string) => apiFetch<AttendanceRecord[]>(`/api/management/attendance/?month=${encodeURIComponent(month)}`, { method: 'GET', authToken: token() });
+export const correctAttendance = (id: string, payload: { status: AttendanceRecord['status']; adminNotes: string; reason: string }) => apiFetch<AttendanceRecord>(`/api/management/attendance/${id}/`, { method: 'PATCH', authToken: token(), body: JSON.stringify(payload) });
+export const listAdminLeaveRequests = () => apiFetch<LeaveRequest[]>('/api/management/leave-requests/', { method: 'GET', authToken: token() });
+export const reviewLeaveRequest = (id: string, status: 'APPROVED' | 'REJECTED') => apiFetch<LeaveRequest>(`/api/management/leave-requests/${id}/`, { method: 'PATCH', authToken: token(), body: JSON.stringify({ status }) });
 
 export const getAppointmentPrescription = (appointmentId: string) => apiFetch<Prescription>(`/api/appointments/${appointmentId}/prescription/`, { method: 'GET', authToken: token() });
 export const saveAppointmentPrescription = (appointmentId: string, payload: Partial<Prescription>) => apiFetch<Prescription>(`/api/appointments/${appointmentId}/prescription/`, { method: 'PUT', authToken: token(), body: JSON.stringify(payload) });

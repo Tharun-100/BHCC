@@ -95,7 +95,7 @@ const AdminDoctors: React.FC<{ user: User }> = ({ user }) => {
       const token = getAccessToken();
       if (!token) throw new Error('Not authenticated.');
 
-      await apiFetch<{ uid: string; email: string }>('/api/admin/create-doctor/', {
+      await apiFetch<{ uid: string; email: string }>('/api/management/create-doctor/', {
         method: 'POST',
         authToken: token,
         body: JSON.stringify({

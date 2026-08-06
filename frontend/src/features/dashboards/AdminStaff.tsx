@@ -46,7 +46,7 @@ const AdminStaff: React.FC<{ currentUserId: string }> = ({ currentUserId }) => {
       const token = getAccessToken();
       if (!token) throw new Error('Not authenticated.');
 
-      await apiFetch<{ uid: string; email: string; role: UserRole }>('/api/admin/create-staff/', {
+      await apiFetch<{ uid: string; email: string; role: UserRole }>('/api/management/create-staff/', {
         method: 'POST',
         authToken: token,
         body: JSON.stringify({
