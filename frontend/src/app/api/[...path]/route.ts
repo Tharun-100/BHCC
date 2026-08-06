@@ -7,7 +7,8 @@ const backendBase = () => (process.env.BACKEND_INTERNAL_URL || 'http://backend:8
 
 async function proxy(request: NextRequest, context: { params: Promise<{ path: string[] }> }) {
   const { path } = await context.params;
-  const upstreamUrl = `${backendBase()}/api/${path.map(encodeURIComponent).join('/')}${request.nextUrl.search}`;
+  const trailingSlash = request.nextUrl.pathname.endsWith('/') ? '/' : '';
+  const upstreamUrl = `${backendBase()}/api/${path.map(encodeURIComponent).join('/')}${trailingSlash}${request.nextUrl.search}`;
   const headers = new Headers(request.headers);
   headers.delete('host');
   headers.delete('content-length');
