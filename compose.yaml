@@ -43,11 +43,15 @@ services:
       CLINIC_TO_EMAIL: ${CLINIC_TO_EMAIL:-bhaktivedantahealthcarecentre@gmail.com}
       CLINIC_LOCATION: ${CLINIC_LOCATION:-Bhaktivedanta Healthcare Centre, Newtown, Kolkata}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0.05}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
+      DJANGO_HSTS_SECONDS: ${DJANGO_HSTS_SECONDS:-300}
     depends_on:
       database:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/departments/', timeout=5)"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health/ready/', timeout=5)"]
       interval: 10s
       timeout: 5s
       retries: 12

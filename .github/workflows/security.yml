@@ -1,0 +1,29 @@
+name: Security and quality
+on:
+  push:
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      POSTGRES_DB_PASSWORD: test-only
+      DJANGO_SECRET_KEY: test-only-not-for-production
+      DJANGO_TEST_SQLITE: "true"
+      DJANGO_DEBUG: "true"
+      EMAIL_BACKEND_MODE: console
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.13" }
+      - run: pip install -r backend/requirements.txt
+      - run: python backend/manage.py test api
+      - uses: actions/setup-node@v4
+        with: { node-version: "22", cache: npm, cache-dependency-path: frontend/package-lock.json }
+      - run: npm ci
+        working-directory: frontend
+      - run: npm audit --omit=dev
+        working-directory: frontend
+      - run: npm run lint
+        working-directory: frontend
+      - run: npm run build
+        working-directory: frontend

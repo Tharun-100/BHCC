@@ -225,6 +225,7 @@ class Prescription(models.Model):
     version = models.PositiveIntegerField(default=1)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.DRAFT)
     finalized_at = models.DateTimeField(null=True, blank=True)
+    signature_sha256 = models.CharField(max_length=64, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -265,6 +266,59 @@ class PrescriptionAuditLog(models.Model):
     action = models.CharField(max_length=40)
     summary = models.TextField(blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
+
+
+class ConsentRecord(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="consent_records")
+    document_type = models.CharField(max_length=40)
+    document_version = models.CharField(max_length=20)
+    accepted_at = models.DateTimeField(auto_now_add=True)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.CharField(max_length=300, blank=True, default="")
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["user", "document_type", "document_version"], name="unique_user_document_consent")]
+
+
+class DataDeletionRequest(models.Model):
+    class Status(models.TextChoices):
+        PENDING = "PENDING", "Pending"
+        APPROVED = "APPROVED", "Approved"
+        REJECTED = "REJECTED", "Rejected"
+        COMPLETED = "COMPLETED", "Completed"
+
+    patient = models.ForeignKey(User, on_delete=models.PROTECT, related_name="data_deletion_requests")
+    reason = models.TextField(blank=True, default="")
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
+    reviewed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="reviewed_data_deletion_requests")
+    review_notes = models.TextField(blank=True, default="")
+    requested_at = models.DateTimeField(auto_now_add=True)
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+
+
+class AdminAuditLog(models.Model):
+    actor = models.ForeignKey(User, on_delete=models.PROTECT, related_name="admin_audit_events")
+    action = models.CharField(max_length=80)
+    target_type = models.CharField(max_length=80, blank=True, default="")
+    target_id = models.CharField(max_length=80, blank=True, default="")
+    summary = models.TextField(blank=True, default="")
+    metadata = models.JSONField(default=dict, blank=True)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+
+class EmailDeliveryLog(models.Model):
+    template_name = models.CharField(max_length=80)
+    recipient_domains = models.JSONField(default=list, blank=True)
+    delivered = models.BooleanField(default=False)
+    error_type = models.CharField(max_length=120, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
 
 
 def allocate_patient_id(profile: UserProfile) -> str:

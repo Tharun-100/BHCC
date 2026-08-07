@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import datetime, timedelta
 from io import BytesIO
 
@@ -169,6 +171,7 @@ def _prescription_out(row: Prescription, include_clinical: bool = True) -> dict:
     result = {
         "id": str(row.id), "prescriptionNumber": row.prescription_number, "version": row.version,
         "status": row.status, "finalizedAt": row.finalized_at.isoformat() if row.finalized_at else None,
+        "signatureSha256": row.signature_sha256 or None,
         "appointmentId": str(consultation.appointment_id), "appointmentReference": f"BHCC-{consultation.appointment_id:06d}",
         "patient": user_to_out(consultation.patient), "doctor": user_to_out(consultation.doctor),
         "appointmentDate": consultation.appointment.date.isoformat(), "department": consultation.appointment.department,
@@ -226,9 +229,25 @@ def finalize_prescription(request, pk: int):
         return Response({"detail": "Only the assigned doctor can finalize a draft."}, status=status.HTTP_403_FORBIDDEN)
     if not row.consultation.diagnosis.strip() or not row.medicines.exists():
         return Response({"detail": "Diagnosis and at least one medicine are required before finalization."}, status=status.HTTP_400_BAD_REQUEST)
+    doctor_profile = request.user.profile
+    if not all((doctor_profile.qualification.strip(), doctor_profile.medical_registration_number.strip(), doctor_profile.registration_council.strip())):
+        return Response({"detail": "Qualification, medical registration number and registration council are required before signing a prescription."}, status=status.HTTP_400_BAD_REQUEST)
+    signature_payload = {
+        "prescription": row.prescription_number,
+        "version": row.version,
+        "appointment": row.consultation.appointment_id,
+        "patient": row.consultation.patient.profile.patient_id,
+        "doctor": request.user_id if hasattr(request, "user_id") else request.user.id,
+        "registration": doctor_profile.medical_registration_number,
+        "diagnosis": row.consultation.diagnosis,
+        "advice": row.consultation.advice,
+        "medicines": list(row.medicines.order_by("position", "id").values("name", "strength", "dosage_form", "dose", "frequency", "duration", "food_instructions", "notes")),
+        "tests": list(row.tests.order_by("position", "id").values("name", "instructions")),
+    }
+    row.signature_sha256 = hashlib.sha256(json.dumps(signature_payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     row.status = Prescription.Status.FINALIZED
     row.finalized_at = timezone.now()
-    row.save(update_fields=["status", "finalized_at"])
+    row.save(update_fields=["status", "finalized_at", "signature_sha256"])
     consultation = row.consultation
     consultation.status = Consultation.Status.COMPLETED
     consultation.save(update_fields=["status"])
@@ -297,6 +316,7 @@ def prescription_pdf(request, pk: int):
     if row.tests.exists(): line("Tests advised", 12, 22)
     for test in row.tests.all(): line(f"- {test.name}: {test.instructions}")
     line(f"Advice: {row.consultation.advice}", 10, 22); line(f"Follow-up: {row.consultation.follow_up_date or 'As advised'}")
+    line(f"Digitally signed record: {row.signature_sha256}", 8, 18)
     pdf.save(); buffer.seek(0)
     PrescriptionAuditLog.objects.create(prescription=row, performed_by=request.user, action="PDF_DOWNLOADED")
     return FileResponse(buffer, as_attachment=True, filename=f"{row.prescription_number}.pdf", content_type="application/pdf")

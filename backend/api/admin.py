@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Appointment, AttendanceRecord, Consultation, Department, DoctorAvailability, Feedback, LabRegistration, LeaveRequest, Prescription, UserProfile
+from .models import AdminAuditLog, Appointment, AttendanceRecord, Consultation, ConsentRecord, DataDeletionRequest, Department, DoctorAvailability, EmailDeliveryLog, Feedback, LabRegistration, LeaveRequest, Prescription, UserProfile
 
 admin.site.register(UserProfile)
 admin.site.register(Department)
@@ -12,3 +12,7 @@ admin.site.register(AttendanceRecord)
 admin.site.register(LeaveRequest)
 admin.site.register(Consultation)
 admin.site.register(Prescription)
+admin.site.register(ConsentRecord)
+admin.site.register(DataDeletionRequest)
+admin.site.register(AdminAuditLog)
+admin.site.register(EmailDeliveryLog)

@@ -122,10 +122,10 @@ export const updateStaffProfile = async (payload: StaffProfilePayload): Promise<
   });
 };
 
-export const loginWithGoogle = async (credential: string): Promise<User> => {
+export const loginWithGoogle = async (credential: string, acceptPolicies = false): Promise<User> => {
   const data = await apiFetch<AuthResponse>('/api/auth/google/', {
     method: 'POST',
-    body: JSON.stringify({ credential })
+    body: JSON.stringify({ credential, acceptPolicies })
   });
   setTokens(data.access, data.refresh);
   return data.user;

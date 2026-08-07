@@ -83,6 +83,30 @@ def user_to_out(user: User) -> dict:
     return data
 
 
+def public_doctor_to_out(user: User) -> dict:
+    """Public doctor directory fields; never expose contact, salary or patient data."""
+    profile = user.profile
+    schedule = profile.weekly_schedule or {
+        day: [{"start": profile.working_hours_start, "end": profile.working_hours_end}]
+        for day in profile.available_days
+    }
+    return {
+        "id": str(user.id),
+        "name": profile.name or user.get_full_name() or "Doctor",
+        "role": UserRole.DOCTOR,
+        "specialty": profile.specialty or None,
+        "department": profile.department or None,
+        "experience": profile.experience or None,
+        "fee": profile.fee,
+        "availableDays": [day for day, windows in schedule.items() if windows],
+        "workingHours": {"start": profile.working_hours_start, "end": profile.working_hours_end},
+        "weeklySchedule": schedule,
+        "medicalRegistrationNumber": profile.medical_registration_number or None,
+        "registrationCouncil": profile.registration_council or None,
+        "qualification": profile.qualification or None,
+    }
+
+
 class DepartmentSerializer(serializers.ModelSerializer):
     id = serializers.CharField(source="pk", read_only=True)
     icon = serializers.CharField(required=False, allow_blank=True, default="")

@@ -1,9 +1,11 @@
 from django.urls import path
 from rest_framework_simplejwt.views import TokenRefreshView
 
-from . import clinical_views, views
+from . import clinical_views, operational_views, views
 
 urlpatterns = [
+    path("health/live/", operational_views.health_live),
+    path("health/ready/", operational_views.health_ready),
     path("auth/login", views.auth_login),
     path("auth/login/", views.auth_login),
     path("auth/google/", views.auth_google),
@@ -29,6 +31,7 @@ urlpatterns = [
     path("auth/token/refresh/", TokenRefreshView.as_view()),
     path("patient/profile", views.patient_profile),
     path("patient/profile/", views.patient_profile),
+    path("patient/data-deletion-requests/", operational_views.data_deletion_requests),
     path("staff/profile", views.staff_profile),
     path("staff/profile/", views.staff_profile),
     path("departments", views.departments),
@@ -68,6 +71,8 @@ urlpatterns = [
     path("management/accounts/", views.admin_all_accounts),
     path("management/staff-accounts/", views.admin_staff_accounts),
     path("management/dashboard/", views.admin_dashboard),
+    path("management/operations/", operational_views.admin_operations),
+    path("management/data-deletion-requests/<int:pk>/", operational_views.admin_deletion_request_detail),
     path("contact", views.contact),
     path("contact/", views.contact),
     path("payments/create-order", views.payments_create_order),

@@ -32,7 +32,8 @@ from .email_service import (
     send_staff_login_otp,
     send_verification_email,
 )
-from .models import Appointment, Department, DoctorAvailability, EmailOTP, Feedback, LabRegistration, UserProfile, UserRole, allocate_patient_id
+from .models import Appointment, ConsentRecord, Department, DoctorAvailability, EmailOTP, Feedback, LabRegistration, UserProfile, UserRole, allocate_patient_id
+from .operational_views import client_ip, record_admin_action
 from .permissions import IsAdmin, IsCounter
 from .serializers import (
     AppointmentSerializer,
@@ -40,6 +41,7 @@ from .serializers import (
     LabRegistrationSerializer,
     AvailabilitySerializer,
     user_to_out,
+    public_doctor_to_out,
 )
 
 
@@ -49,6 +51,17 @@ SPIRITUAL_FIELD_DISABLED_RELIGIONS = {"muslim", "christian"}
 STAFF_ROLES = {UserRole.DOCTOR, UserRole.ADMIN, UserRole.COUNTER, UserRole.STAFF}
 logger = logging.getLogger(__name__)
 WEEK_DAYS = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"}
+POLICY_VERSION = "2026-08-07"
+
+
+def _record_policy_consents(request, user: User) -> None:
+    for document_type in ("PRIVACY", "TERMS"):
+        ConsentRecord.objects.get_or_create(
+            user=user,
+            document_type=document_type,
+            document_version=POLICY_VERSION,
+            defaults={"ip_address": client_ip(request), "user_agent": request.META.get("HTTP_USER_AGENT", "")[:500]},
+        )
 
 
 def _token_pair(user: User) -> dict:
@@ -284,10 +297,13 @@ def auth_google(request):
             if profile_fields:
                 profile.save(update_fields=profile_fields)
         else:
+            if not _truthy(request.data.get("acceptPolicies")):
+                return Response({"detail": "You must accept the Privacy Policy and Terms to create an account."}, status=status.HTTP_400_BAD_REQUEST)
             user = User.objects.create_user(username=email, email=email, first_name=name)
             user.set_unusable_password()
             user.save(update_fields=["password"])
             profile = UserProfile.objects.create(user=user, role=UserRole.PATIENT, name=name, email_verified_at=timezone.now())
+            _record_policy_consents(request, user)
         allocate_patient_id(profile)
 
     data = _token_pair(user)
@@ -380,6 +396,8 @@ def auth_register_patient(request):
 
     if not name or not email or not password:
         return Response({"detail": "Name, email, and password are required."}, status=status.HTTP_400_BAD_REQUEST)
+    if not _truthy(request.data.get("acceptPolicies")):
+        return Response({"detail": "You must accept the Privacy Policy and Terms to create an account."}, status=status.HTTP_400_BAD_REQUEST)
     if profile_error:
         return Response({"detail": profile_error}, status=status.HTTP_400_BAD_REQUEST)
     required_profile_fields = ["address", "phone_no", "profession", "annual_income_range", "religion"]
@@ -398,6 +416,7 @@ def auth_register_patient(request):
 
     user = User.objects.create_user(username=email, email=email, password=password, first_name=name, is_active=False)
     profile = UserProfile.objects.create(user=user, role=UserRole.PATIENT, name=name, **profile_data)
+    _record_policy_consents(request, user)
     allocate_patient_id(profile)
     _send_patient_verification(user, profile)
     return Response({"verificationRequired": True, "email": email, "detail": "Account created. Check your email to verify it before signing in."}, status=status.HTTP_201_CREATED)
@@ -613,7 +632,7 @@ def department_detail(request, pk: int):
 @permission_classes([AllowAny])
 def doctors(request):
     qs = User.objects.filter(profile__role=UserRole.DOCTOR).select_related("profile").order_by("profile__name", "username")
-    return Response([user_to_out(u) for u in qs])
+    return Response([public_doctor_to_out(u) for u in qs])
 
 
 @api_view(["GET"])
@@ -812,8 +831,7 @@ def availability(request):
 @permission_classes([AllowAny])
 def feedback(request):
     if request.method == "GET":
-        approved = request.query_params.get("approved") == "true"
-        qs = Feedback.objects.filter(approved=True) if approved else Feedback.objects.all()
+        qs = Feedback.objects.filter(approved=True)
         qs = qs.order_by("-created_at")
         out = [
             {
@@ -915,6 +933,7 @@ def admin_create_doctor(request):
         **spiritual_profile,
     )
     transaction.on_commit(lambda: send_admin_notification(event="Doctor account created", summary=f"Doctor account created for {name} ({email})."))
+    record_admin_action(request, action="ACCOUNT_CREATED", target_type="USER", target_id=user.id, summary=f"Doctor account created for {name}.")
     return Response({"uid": str(user.id), "email": email}, status=status.HTTP_201_CREATED)
 
 
@@ -951,6 +970,7 @@ def admin_create_staff(request):
         **spiritual_profile,
     )
     transaction.on_commit(lambda: send_admin_notification(event="Staff account created", summary=f"{role} account created for {name} ({email})."))
+    record_admin_action(request, action="ACCOUNT_CREATED", target_type="USER", target_id=user.id, summary=f"{role} account created for {name}.")
     return Response({"uid": str(user.id), "email": email, "role": role}, status=status.HTTP_201_CREATED)
 
 
@@ -971,6 +991,7 @@ def admin_update_account(request, pk: int):
         if purge_requested:
             if str(request.data.get("confirmation") or "").strip() != expected_confirmation:
                 return Response({"detail": f"Type {expected_confirmation} to confirm permanent removal of this test account and all linked clinical records."}, status=status.HTTP_400_BAD_REQUEST)
+            record_admin_action(request, action="ACCOUNT_PURGED", target_type="USER", target_id=user.id, summary=f"Test {role} account {identity} purged with clinical records.")
             with transaction.atomic():
                 Appointment.objects.filter(Q(patient=user) | Q(doctor=user)).delete()
                 try:
@@ -979,6 +1000,7 @@ def admin_update_account(request, pk: int):
                     return Response({"detail": "This account is referenced by protected audit records and cannot be purged. Deactivate it instead."}, status=status.HTTP_409_CONFLICT)
             transaction.on_commit(lambda: send_admin_notification(event="Test account purged", summary=f"The {role} test account {identity} and its linked clinical records were permanently deleted by an administrator."))
             return Response(status=status.HTTP_204_NO_CONTENT)
+        record_admin_action(request, action="ACCOUNT_DELETED", target_type="USER", target_id=user.id, summary=f"{role} account {identity} permanently deleted.")
         try:
             user.delete()
         except ProtectedError:
@@ -1014,6 +1036,7 @@ def admin_update_account(request, pk: int):
 
     for event, summary in notifications:
         transaction.on_commit(lambda event=event, summary=summary: send_admin_notification(event=event, summary=summary))
+        record_admin_action(request, action="ACCOUNT_UPDATED", target_type="USER", target_id=user.id, summary=summary)
     return Response(user_to_out(user))
 
 
@@ -1033,6 +1056,7 @@ def admin_reset_account_password(request, pk: int):
     user.save(update_fields=["password", "is_active"])
     identity = user.email or user.username
     transaction.on_commit(lambda: send_admin_notification(event="Account password reset", summary=f"An administrator reset and reactivated the {user.profile.role} account {identity}."))
+    record_admin_action(request, action="PASSWORD_RESET", target_type="USER", target_id=user.id, summary=f"Administrator reset the {user.profile.role} account password.")
     return Response({"ok": True, "user": {**user_to_out(user), "isActive": True}})
 
 

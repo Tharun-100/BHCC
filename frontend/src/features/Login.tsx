@@ -6,6 +6,7 @@ import { CLINIC_NAME, PRABHUPADA_BOOK_LISTS } from '../constants';
 import { loginWithEmail, loginWithGoogle, logoutUser, registerPatientWithEmail, requestPasswordReset } from '../services/authService';
 import { useAuth } from '@/providers/AuthProvider';
 import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 
 declare global {
   interface Window {
@@ -39,7 +40,8 @@ const emptyRegistrationForm: PatientRegistrationPayload = {
     small: '',
     medium: '',
     big: ''
-  }
+  },
+  acceptPolicies: false
 };
 
 const incomeRanges = ['Less than 1 lakh', '1-5 Lakhs', 'Greater than 5 Lakhs'];
@@ -164,7 +166,11 @@ const Login: React.FC = () => {
     setIsLoading(true);
 
     try {
-      const nextUser = await loginWithGoogle(credential);
+      if (isRegistering && !formData.acceptPolicies) {
+        setError('Please accept the Privacy Policy and Terms before creating an account.');
+        return;
+      }
+      const nextUser = await loginWithGoogle(credential, Boolean(formData.acceptPolicies));
 
       if (nextUser.role !== UserRole.PATIENT) {
         await logoutUser();
@@ -468,6 +474,10 @@ const Login: React.FC = () => {
                     </div>
                   </div>
                 ) : null}
+                <label className="flex items-start gap-3 rounded-2xl border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700">
+                  <input required type="checkbox" checked={Boolean(formData.acceptPolicies)} onChange={(e) => setFormData({ ...formData, acceptPolicies: e.target.checked })} className="mt-1 h-4 w-4" />
+                  <span>I agree to the <Link className="font-bold text-sky-700 underline" href="/privacy" target="_blank">Privacy Policy</Link> and <Link className="font-bold text-sky-700 underline" href="/terms" target="_blank">Terms of Use</Link>.</span>
+                </label>
               </div>
             )}
 

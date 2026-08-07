@@ -121,6 +121,7 @@ export interface PatientRegistrationPayload extends PatientProfileDetails {
   name: string;
   email: string;
   password: string;
+  acceptPolicies?: boolean;
 }
 
 export interface TimeSlot {

@@ -10,7 +10,7 @@ from django.db import transaction
 from django.template.loader import render_to_string
 from django.utils import timezone
 
-from .models import Appointment
+from .models import Appointment, EmailDeliveryLog
 
 logger = logging.getLogger(__name__)
 
@@ -53,15 +53,21 @@ def _send_templated_email(
     )
     message.attach_alternative(html_body, "text/html")
 
+    error_type = ""
     try:
         delivered = message.send(fail_silently=False) == 1
     except Exception as exc:  # The provider exception is deliberately not returned to API clients.
+        error_type = type(exc).__name__
         logger.warning(
             "Transactional email delivery failed for template=%s error_type=%s",
             template_name,
             type(exc).__name__,
         )
-        return EmailDeliveryResult(delivered=False)
+        delivered = False
+    try:
+        EmailDeliveryLog.objects.create(template_name=template_name, recipient_domains=sorted({address.rsplit("@", 1)[-1].lower() for address in clean_recipients if "@" in address}), delivered=delivered, error_type=error_type)
+    except Exception:
+        logger.exception("Could not persist transactional email delivery status.")
     return EmailDeliveryResult(delivered=delivered)
 
 
