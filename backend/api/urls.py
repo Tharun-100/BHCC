@@ -64,6 +64,7 @@ urlpatterns = [
     path("management/doctors/<int:pk>/schedule/", views.admin_update_doctor_schedule),
     path("management/create-staff/", views.admin_create_staff),
     path("management/accounts/<int:pk>/", views.admin_update_account),
+    path("management/accounts/<int:pk>/reset-password/", views.admin_reset_account_password),
     path("management/accounts/", views.admin_all_accounts),
     path("management/staff-accounts/", views.admin_staff_accounts),
     path("management/dashboard/", views.admin_dashboard),

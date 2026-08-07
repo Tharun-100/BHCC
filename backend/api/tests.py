@@ -95,6 +95,15 @@ class ClinicalWorkflowTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.doctor.refresh_from_db()
         self.assertFalse(self.doctor.is_active)
+        response = client.post(f"/api/management/accounts/{self.doctor.pk}/reset-password/", {"password": "New-safe-doctor-password-42"}, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.doctor.refresh_from_db()
+        self.assertTrue(self.doctor.is_active)
+        self.assertTrue(self.doctor.check_password("New-safe-doctor-password-42"))
+        response = client.delete(f"/api/management/accounts/{self.doctor.pk}/", {"purgeClinicalRecords": True, "confirmation": f"DELETE {self.doctor.email}"}, format="json")
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(User.objects.filter(pk=self.doctor.pk).exists())
+        self.assertFalse(Appointment.objects.filter(pk=self.appointment.pk).exists())
 
 
 EMAIL_TEST_SETTINGS = {

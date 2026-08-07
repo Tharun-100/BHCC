@@ -119,6 +119,17 @@ export const deleteStaffAccount = async (id: string): Promise<void> => {
   await apiFetch<void>(`/api/management/accounts/${encodeURIComponent(id)}/`, { method: 'DELETE', authToken: token });
 };
 
+export const purgeTestAccount = async (id: string, confirmation: string): Promise<void> => {
+  const token = authTokenOrThrow();
+  await apiFetch<void>(`/api/management/accounts/${encodeURIComponent(id)}/`, { method: 'DELETE', authToken: token, body: JSON.stringify({ purgeClinicalRecords: true, confirmation }) });
+};
+
+export const resetAccountPassword = async (id: string, password: string): Promise<User> => {
+  const token = authTokenOrThrow();
+  const result = await apiFetch<{ ok: true; user: User }>(`/api/management/accounts/${encodeURIComponent(id)}/reset-password/`, { method: 'POST', authToken: token, body: JSON.stringify({ password }) });
+  return result.user;
+};
+
 export const listAllAccounts = async (): Promise<User[]> => {
   const token = getAccessToken();
   if (!token) throw new Error('Not authenticated.');

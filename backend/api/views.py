@@ -963,8 +963,22 @@ def admin_update_account(request, pk: int):
             return Response({"detail": "You cannot delete your own administrator account."}, status=status.HTTP_400_BAD_REQUEST)
         role = getattr(user.profile, "role", None)
         identity = user.email or user.username
-        if user.patient_appointments.exists() or user.doctor_appointments.exists() or user.consultations_given.exists() or user.consultations_received.exists():
+        has_clinical_records = user.patient_appointments.exists() or user.doctor_appointments.exists() or user.consultations_given.exists() or user.consultations_received.exists()
+        purge_requested = _truthy(request.data.get("purgeClinicalRecords"))
+        expected_confirmation = f"DELETE {identity}"
+        if has_clinical_records and not purge_requested:
             return Response({"detail": "This account has protected clinical records and cannot be permanently deleted. Deactivate its login instead so appointments, prescriptions, and audit history remain intact."}, status=status.HTTP_409_CONFLICT)
+        if purge_requested:
+            if str(request.data.get("confirmation") or "").strip() != expected_confirmation:
+                return Response({"detail": f"Type {expected_confirmation} to confirm permanent removal of this test account and all linked clinical records."}, status=status.HTTP_400_BAD_REQUEST)
+            with transaction.atomic():
+                Appointment.objects.filter(Q(patient=user) | Q(doctor=user)).delete()
+                try:
+                    user.delete()
+                except ProtectedError:
+                    return Response({"detail": "This account is referenced by protected audit records and cannot be purged. Deactivate it instead."}, status=status.HTTP_409_CONFLICT)
+            transaction.on_commit(lambda: send_admin_notification(event="Test account purged", summary=f"The {role} test account {identity} and its linked clinical records were permanently deleted by an administrator."))
+            return Response(status=status.HTTP_204_NO_CONTENT)
         try:
             user.delete()
         except ProtectedError:
@@ -1001,6 +1015,25 @@ def admin_update_account(request, pk: int):
     for event, summary in notifications:
         transaction.on_commit(lambda event=event, summary=summary: send_admin_notification(event=event, summary=summary))
     return Response(user_to_out(user))
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated, IsAdmin])
+def admin_reset_account_password(request, pk: int):
+    user = get_object_or_404(User.objects.select_related("profile"), pk=pk)
+    if user.pk == request.user.pk:
+        return Response({"detail": "Use your own profile to change the current administrator password."}, status=status.HTTP_400_BAD_REQUEST)
+    new_password = str(request.data.get("password") or "")
+    try:
+        password_validation.validate_password(new_password, user)
+    except ValidationError as exc:
+        return Response({"detail": " ".join(exc.messages)}, status=status.HTTP_400_BAD_REQUEST)
+    user.set_password(new_password)
+    user.is_active = True
+    user.save(update_fields=["password", "is_active"])
+    identity = user.email or user.username
+    transaction.on_commit(lambda: send_admin_notification(event="Account password reset", summary=f"An administrator reset and reactivated the {user.profile.role} account {identity}."))
+    return Response({"ok": True, "user": {**user_to_out(user), "isActive": True}})
 
 
 @api_view(["GET"])
