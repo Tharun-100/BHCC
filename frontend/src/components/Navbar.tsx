@@ -111,14 +111,6 @@ const Navbar: React.FC<NavbarProps> = ({ user, onLogout }) => {
               <>
                 <NavLink to="/dashboard">Overview</NavLink>
                 <NavLink to="/dashboard/profile">Profile</NavLink>
-                <NavLink to="/dashboard/staff">Staff</NavLink>
-                <NavLink to="/dashboard/profiles">Profiles</NavLink>
-                <NavLink to="/dashboard/prescriptions">Prescriptions</NavLink>
-                <NavLink to="/dashboard/doctors">Doctors</NavLink>
-                <NavLink to="/dashboard/departments">Departments</NavLink>
-                <NavLink to="/dashboard/revenue">Revenue</NavLink>
-                <NavLink to="/dashboard/availability">Availability</NavLink>
-                <NavLink to="/dashboard/attendance">Attendance</NavLink>
                 <div className="w-px h-6 bg-gray-200 mx-4" />
                 <div className="flex items-center space-x-3 mr-4">
                   <div className="w-8 h-8 bg-sky-100 text-sky-600 rounded-full flex items-center justify-center font-bold text-xs">
@@ -211,16 +203,7 @@ const Navbar: React.FC<NavbarProps> = ({ user, onLogout }) => {
                 </>
               )}
               {user.role === UserRole.ADMIN && (
-                <>
-                  <Link href="/dashboard/doctors" className="block py-2 text-gray-700" onClick={() => setIsOpen(false)}>Doctors</Link>
-                  <Link href="/dashboard/staff" className="block py-2 text-gray-700" onClick={() => setIsOpen(false)}>Staff</Link>
-                  <Link href="/dashboard/profiles" className="block py-2 text-gray-700" onClick={() => setIsOpen(false)}>All Profiles</Link>
-                  <Link href="/dashboard/prescriptions" className="block py-2 text-gray-700" onClick={() => setIsOpen(false)}>Prescriptions</Link>
-                  <Link href="/dashboard/departments" className="block py-2 text-gray-700" onClick={() => setIsOpen(false)}>Departments</Link>
-                  <Link href="/dashboard/revenue" className="block py-2 text-gray-700" onClick={() => setIsOpen(false)}>Revenue</Link>
-                  <Link href="/dashboard/availability" className="block py-2 text-gray-700" onClick={() => setIsOpen(false)}>Availability</Link>
-                  <Link href="/dashboard/attendance" className="block py-2 text-gray-700" onClick={() => setIsOpen(false)}>Attendance</Link>
-                </>
+                <p className="py-2 text-xs font-semibold text-gray-400">Management tools are available in the grouped dashboard menu.</p>
               )}
               {user.role === UserRole.COUNTER && (
                 <>

@@ -43,9 +43,6 @@ services:
       CLINIC_TO_EMAIL: ${CLINIC_TO_EMAIL:-bhaktivedantahealthcarecentre@gmail.com}
       CLINIC_LOCATION: ${CLINIC_LOCATION:-Bhaktivedanta Healthcare Centre, Newtown, Kolkata}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
-      SENTRY_DSN: ${SENTRY_DSN:-}
-      SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0.05}
-      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
       DJANGO_HSTS_SECONDS: ${DJANGO_HSTS_SECONDS:-300}
     depends_on:
       database:

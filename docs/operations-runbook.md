@@ -2,9 +2,9 @@
 
 ## Monitoring and alerts
 
-- Monitor `https://bhaktivedantahealthcare.tech/api/health/ready/` every minute with UptimeRobot or Better Stack. Alert two administrators by email/phone after two failures; recovery alerts must also be enabled.
-- Configure Coolify deployment notifications under **Settings > Notifications** using an SMTP, Discord, Slack or Telegram destination, then enable deployment failure and server-unreachable events.
-- Create a Sentry Django project, set `SENTRY_DSN` in Coolify as a runtime-only secret, and set `SENTRY_ENVIRONMENT=production`. This integration suppresses default personally identifiable information; never attach request bodies or medical data to errors.
+- Use Coolify's built-in container health status to monitor `/api/health/ready/`. Check application and deployment logs in Coolify after every deployment and whenever the service becomes unhealthy.
+- Keep Coolify deployment and server-health notifications disabled unless the clinic later chooses and approves a notification destination.
+- Django writes application errors to the backend container's standard output. Review these logs in Coolify; logs must never intentionally include passwords, tokens, request bodies or medical information.
 - Review `/api/management/operations/` weekly for email failures, deletion requests and administrator activity. Resend delivery/bounce dashboards remain the source of truth for provider delivery.
 
 ## Backups and restore

@@ -161,16 +161,6 @@ REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_RATES": {"anon": "60/minute", "user": "300/minute"},
 }
 
-SENTRY_DSN = os.getenv("SENTRY_DSN", "").strip()
-if SENTRY_DSN:
-    import sentry_sdk
-    sentry_sdk.init(
-        dsn=SENTRY_DSN,
-        send_default_pii=False,
-        traces_sample_rate=float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.05")),
-        environment=os.getenv("SENTRY_ENVIRONMENT", "production"),
-    )
-
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
