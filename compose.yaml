@@ -48,7 +48,11 @@ services:
       database:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health/ready/', timeout=5)"]
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import os, urllib.request; host=os.getenv('DJANGO_ALLOWED_HOSTS','localhost').split(',')[0].strip() or 'localhost'; request=urllib.request.Request('http://127.0.0.1:8000/api/health/ready/', headers={'Host': host, 'X-Forwarded-Proto': 'https'}); urllib.request.urlopen(request, timeout=5)"
       interval: 10s
       timeout: 5s
       retries: 12
