@@ -5,19 +5,15 @@ import Link from 'next/link';
 import { MapPin, Phone, Mail, Instagram, Facebook, Twitter } from 'lucide-react';
 import { CLINIC_NAME, CLINIC_ADDRESS, CLINIC_PHONE, CLINIC_EMAIL } from '../constants';
 import { BrandLockup } from './BrandLockup';
-
-const consultationServices = [
-  'Ophthalmology',
-  'Dental',
-  'Cardiology',
-  'Gynecology',
-  'Obstetrics',
-];
+import { listDepartments } from '@/services/clinicService';
+import { Department } from '@/types';
 
 const patientLoginForService = (department: string) =>
   `/login?next=${encodeURIComponent(`/book?department=${encodeURIComponent(department)}`)}`;
 
 const Footer: React.FC = () => {
+  const [departments, setDepartments] = React.useState<Department[]>([]);
+  React.useEffect(() => { listDepartments().then(setDepartments).catch(() => setDepartments([])); }, []);
   return (
     <footer className="bg-gray-900 text-gray-300 pt-16 pb-8">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -47,13 +43,14 @@ const Footer: React.FC = () => {
           <div className="xl:col-span-2">
             <h3 className="text-white font-bold mb-6">Our Services</h3>
             <ul className="space-y-4 text-sm">
-              {consultationServices.map((service) => (
-                <li key={service}>
-                  <Link href={patientLoginForService(service)} className="hover:text-sky-400 transition">
-                    {service} Consultation
+              {departments.map((department) => (
+                <li key={department.id}>
+                  <Link href={patientLoginForService(department.name)} className="hover:text-sky-400 transition">
+                    {department.name} Consultation
                   </Link>
                 </li>
               ))}
+              {departments.length === 0 && <li className="text-gray-500">Services will appear here when available.</li>}
             </ul>
           </div>
 

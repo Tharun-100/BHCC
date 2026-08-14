@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { CLINIC_ADDRESS, DEPARTMENTS as FALLBACK_DEPARTMENTS, DOCTORS as FALLBACK_DOCTORS, isCurrentService, mergeCurrentDepartments } from '../constants';
+import { CLINIC_ADDRESS, DOCTORS as FALLBACK_DOCTORS } from '../constants';
 import { Department, User, WeekDayName, WeeklySchedule } from '../types';
 import {
   Check,
@@ -69,7 +69,7 @@ const summarizeSchedule = (doctor: User) => {
 
 const BookAppointment: React.FC = () => {
   const { user, isLoading } = useAuth();
-  const [departments, setDepartments] = useState<Department[]>(FALLBACK_DEPARTMENTS);
+  const [departments, setDepartments] = useState<Department[]>([]);
   const [doctors, setDoctors] = useState<User[]>(FALLBACK_DOCTORS);
   const [step, setStep] = useState(1);
   const [selectedDept, setSelectedDept] = useState<Department | null>(null);
@@ -101,8 +101,9 @@ const BookAppointment: React.FC = () => {
     const load = async () => {
       const [dbDepartments, dbDoctors] = await Promise.all([listDepartments(), listDoctors()]);
       if (!mounted) return;
-      setDepartments(mergeCurrentDepartments(dbDepartments));
-      setDoctors(dbDoctors.filter((doctor) => isCurrentService(doctor.department)));
+      setDepartments(dbDepartments);
+      const departmentNames = new Set(dbDepartments.map((department) => department.name.toLowerCase()));
+      setDoctors(dbDoctors.filter((doctor) => doctor.department && departmentNames.has(doctor.department.toLowerCase())));
     };
     load().catch(() => null);
     return () => {

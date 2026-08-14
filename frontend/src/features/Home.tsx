@@ -1,7 +1,7 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { DEPARTMENTS as FALLBACK_DEPARTMENTS, DOCTORS as FALLBACK_DOCTORS, isCurrentService, mergeCurrentDepartments } from '../constants';
+import { DOCTORS as FALLBACK_DOCTORS } from '../constants';
 import { listDepartments, listDoctors } from '../services/clinicService';
 import { Department, User } from '../types';
 import { ArrowRight, Heart, Shield, Users, CalendarCheck, MapPin } from 'lucide-react';
@@ -17,7 +17,7 @@ const getDoctorInitials = (name: string) =>
     .join('');
 
 const Home: React.FC = () => {
-  const [departments, setDepartments] = React.useState<Department[]>(FALLBACK_DEPARTMENTS);
+  const [departments, setDepartments] = React.useState<Department[]>([]);
   const [doctors, setDoctors] = React.useState<User[]>(FALLBACK_DOCTORS);
 
   React.useEffect(() => {
@@ -25,8 +25,9 @@ const Home: React.FC = () => {
     const load = async () => {
       const [dbDepartments, dbDoctors] = await Promise.all([listDepartments(), listDoctors()]);
       if (!mounted) return;
-      setDepartments(mergeCurrentDepartments(dbDepartments));
-      setDoctors(dbDoctors.filter((doctor) => isCurrentService(doctor.department)));
+      setDepartments(dbDepartments);
+      const departmentNames = new Set(dbDepartments.map((department) => department.name.toLowerCase()));
+      setDoctors(dbDoctors.filter((doctor) => doctor.department && departmentNames.has(doctor.department.toLowerCase())));
     };
     load().catch(() => null);
     return () => {
@@ -100,7 +101,7 @@ const Home: React.FC = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16">
             <h2 className="text-4xl font-extrabold text-gray-900 mb-4">Our Services</h2>
-            <p className="text-gray-600 max-w-2xl mx-auto">Doctor consultations are currently available across five specialist areas.</p>
+            <p className="text-gray-600 max-w-2xl mx-auto">Explore the consultation services currently available at the clinic.</p>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             {departments.slice(0, 3).map((dept) => {
@@ -112,8 +113,8 @@ const Home: React.FC = () => {
                   </div>
                   <h3 className="text-xl font-bold text-gray-900 mb-4">{dept.name}</h3>
                   <p className="text-gray-500 mb-6 leading-relaxed">{dept.description}</p>
-                  <Link href="/departments" className="text-sky-600 font-bold flex items-center hover:text-sky-700">
-                    Learn more <ArrowRight className="ml-2" size={18} />
+                  <Link href={`/departments#department-${dept.id}`} className="text-sky-600 font-bold flex items-center hover:text-sky-700">
+                    View service <ArrowRight className="ml-2" size={18} />
                   </Link>
                 </div>
               );
@@ -147,7 +148,7 @@ const Home: React.FC = () => {
               <h2 className="text-4xl font-extrabold text-gray-900 mb-8 leading-tight">Why Choose Bhaktivedanta Health Care Center?</h2>
               <div className="space-y-8">
                 {[
-                  { title: 'Focused Consultations', desc: 'Access doctor consultations across our five currently available specialist areas.', icon: <Leaf className="text-green-500" /> },
+                  { title: 'Focused Consultations', desc: 'Access doctor consultations across the specialist departments currently available at the clinic.', icon: <Leaf className="text-green-500" /> },
                   { title: 'Responsible Guidance', desc: 'Receive thoughtful clinical guidance focused on your individual health concerns.', icon: <Shield className="text-sky-500" /> },
                   { title: 'Compassionate Staff', desc: 'Our caregivers treat every patient as family, with kindness and empathy.', icon: <Users className="text-amber-500" /> },
                 ].map((item, idx) => (

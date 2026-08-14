@@ -4,6 +4,7 @@ import { apiFetch } from '@/lib/api';
 import { getAccessToken } from '@/lib/storage';
 import { Shield, Trash2, UserPlus } from 'lucide-react';
 import { deleteStaffAccount, listStaffAccounts } from '@/services/clinicService';
+import PasswordInput from '@/components/PasswordInput';
 
 const AdminStaff: React.FC<{ currentUserId: string }> = ({ currentUserId }) => {
   const [isCreating, setIsCreating] = React.useState(false);
@@ -131,7 +132,7 @@ const AdminStaff: React.FC<{ currentUserId: string }> = ({ currentUserId }) => {
           )}
           <input className="px-4 py-3 rounded-xl border border-gray-200" placeholder="Full Name" value={form.name} onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))} />
           <input type="email" className="px-4 py-3 rounded-xl border border-gray-200" placeholder="Email" value={form.email} onChange={(e) => setForm((prev) => ({ ...prev, email: e.target.value }))} />
-          <input type="password" className="px-4 py-3 rounded-xl border border-gray-200" placeholder="Temporary Password" value={form.password} onChange={(e) => setForm((prev) => ({ ...prev, password: e.target.value }))} />
+            <PasswordInput className="px-4 py-3 rounded-xl border border-gray-200" placeholder="Temporary Password" value={form.password} onChange={(e) => setForm((prev) => ({ ...prev, password: e.target.value }))} />
           <input className="px-4 py-3 rounded-xl border border-gray-200" placeholder="Phone No" value={form.phoneNo} onChange={(e) => setForm((prev) => ({ ...prev, phoneNo: e.target.value }))} />
           <input className="px-4 py-3 rounded-xl border border-gray-200" placeholder="Profession / Designation" value={form.profession} onChange={(e) => setForm((prev) => ({ ...prev, profession: e.target.value }))} />
           <input type="number" className="px-4 py-3 rounded-xl border border-gray-200" placeholder="Salary (admin only)" value={form.salary} onChange={(e) => setForm((prev) => ({ ...prev, salary: e.target.value }))} />

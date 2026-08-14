@@ -13,6 +13,7 @@ import { CLINIC_NAME } from '../constants';
 import { requestPasswordReset, requestStaffLoginOtp, verifyStaffLoginOtp } from '../services/authService';
 import { useAuth } from '@/providers/AuthProvider';
 import { useRouter, useSearchParams } from 'next/navigation';
+import PasswordInput from '@/components/PasswordInput';
 
 const StaffLogin: React.FC = () => {
   const router = useRouter();
@@ -226,9 +227,8 @@ const StaffLogin: React.FC = () => {
                 <label className="text-xs font-bold text-gray-400 uppercase tracking-widest ml-1">Password</label>
                 <div className="relative group">
                   <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300 group-focus-within:text-sky-500 transition-colors" size={20} />
-                  <input
+                  <PasswordInput
                     required
-                    type="password"
                     placeholder="********"
                     readOnly={Boolean(otpChallengeId)}
                     className={`w-full pl-12 pr-4 py-4 border-2 border-transparent rounded-2xl transition-all focus:ring-0 text-gray-900 ${otpChallengeId ? 'bg-gray-100 cursor-not-allowed' : 'bg-gray-50 focus:bg-white focus:border-sky-500'}`}

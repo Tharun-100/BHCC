@@ -7,6 +7,7 @@ import { ApiError, apiFetch } from '@/lib/api';
 import { clearTokens, getAccessToken } from '@/lib/storage';
 import { useRouter } from 'next/navigation';
 import { downloadCsv } from '@/lib/downloadCsv';
+import PasswordInput from '@/components/PasswordInput';
 
 const AdminDoctors: React.FC<{ user: User }> = ({ user }) => {
   const router = useRouter();
@@ -166,7 +167,7 @@ const AdminDoctors: React.FC<{ user: User }> = ({ user }) => {
         <form onSubmit={handleCreateDoctor} className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <input className="px-4 py-3 rounded-xl border border-gray-200" placeholder="Name" value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} />
           <input className="px-4 py-3 rounded-xl border border-gray-200" placeholder="Email" value={form.email} onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))} />
-          <input type="password" className="px-4 py-3 rounded-xl border border-gray-200" placeholder="Temp Password" value={form.password} onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))} />
+              <PasswordInput className="px-4 py-3 rounded-xl border border-gray-200" placeholder="Temp Password" value={form.password} onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))} />
           <input className="px-4 py-3 rounded-xl border border-gray-200" placeholder="Department" value={form.department} onChange={(e) => setForm((p) => ({ ...p, department: e.target.value }))} />
           <input className="px-4 py-3 rounded-xl border border-gray-200" placeholder="Specialty" value={form.specialty} onChange={(e) => setForm((p) => ({ ...p, specialty: e.target.value }))} />
           <input className="px-4 py-3 rounded-xl border border-gray-200" placeholder="Experience (e.g. 8 Years)" value={form.experience} onChange={(e) => setForm((p) => ({ ...p, experience: e.target.value }))} />

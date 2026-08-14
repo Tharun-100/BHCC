@@ -7,6 +7,7 @@ import { loginWithEmail, loginWithGoogle, logoutUser, registerPatientWithEmail, 
 import { useAuth } from '@/providers/AuthProvider';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
+import PasswordInput from '@/components/PasswordInput';
 
 declare global {
   interface Window {
@@ -286,9 +287,8 @@ const Login: React.FC = () => {
                 <label className="text-xs font-bold text-gray-400 uppercase tracking-widest ml-1">Password</label>
                 <div className="relative group">
                   <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300 group-focus-within:text-sky-500 transition-colors" size={20} />
-                  <input
+                  <PasswordInput
                     required
-                    type="password"
                     placeholder="********"
                     className="w-full pl-12 pr-4 py-4 bg-gray-50 border-2 border-transparent rounded-2xl focus:bg-white focus:border-sky-500 transition-all focus:ring-0 text-gray-900"
                     value={formData.password}

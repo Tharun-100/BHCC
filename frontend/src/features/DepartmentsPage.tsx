@@ -1,6 +1,5 @@
 
 import React from 'react';
-import { DEPARTMENTS as FALLBACK_DEPARTMENTS, mergeCurrentDepartments } from '../constants';
 import * as Icons from 'lucide-react';
 import { ArrowRight } from 'lucide-react';
 import Link from 'next/link';
@@ -8,20 +7,27 @@ import { listDepartments } from '../services/clinicService';
 import { Department } from '../types';
 
 const DepartmentsPage: React.FC = () => {
-  const [departments, setDepartments] = React.useState<Department[]>(FALLBACK_DEPARTMENTS);
+  const [departments, setDepartments] = React.useState<Department[]>([]);
+  const [error, setError] = React.useState('');
 
   React.useEffect(() => {
     let mounted = true;
     const load = async () => {
       const dbRows = await listDepartments();
       if (!mounted) return;
-      setDepartments(mergeCurrentDepartments(dbRows));
+      setDepartments(dbRows);
     };
-    load().catch(() => null);
+    load().catch(() => setError('Services could not be loaded. Please try again.'));
     return () => {
       mounted = false;
     };
   }, []);
+
+  React.useEffect(() => {
+    if (departments.length === 0 || !window.location.hash) return;
+    const target = document.getElementById(window.location.hash.slice(1));
+    target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [departments]);
 
   return (
     <div className="bg-gray-50 min-h-screen py-20">
@@ -29,15 +35,17 @@ const DepartmentsPage: React.FC = () => {
         <div className="text-center mb-20">
           <h1 className="text-5xl font-extrabold text-gray-900 mb-6">Our Services</h1>
           <p className="text-xl text-gray-500 max-w-2xl mx-auto leading-relaxed">
-            We currently offer doctor consultations in five specialist areas, guided by responsible and compassionate care.
+            Explore the consultation services currently configured by the clinic.
           </p>
         </div>
 
+        {error && <p className="mb-8 rounded-2xl bg-red-50 p-4 text-center font-semibold text-red-700">{error}</p>}
+        {!error && departments.length === 0 && <p className="mb-8 text-center text-gray-500">No services are currently available.</p>}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
           {departments.map((dept) => {
             const Icon = (Icons as any)[dept.icon] || Icons.Heart;
             return (
-              <div key={dept.id} className="bg-white rounded-[2rem] p-10 border border-gray-100 shadow-sm hover:shadow-xl transition-all group overflow-hidden relative">
+              <div id={`department-${dept.id}`} key={dept.id} className="bg-white rounded-[2rem] p-10 border border-gray-100 shadow-sm hover:border-sky-400 hover:shadow-xl target:border-sky-500 target:ring-4 target:ring-sky-100 transition-all group overflow-hidden relative">
                 <div className="absolute top-0 right-0 w-32 h-32 bg-sky-50 rounded-bl-[5rem] -mr-8 -mt-8 transition-transform group-hover:scale-110"></div>
                 
                 <div className="relative z-10">
