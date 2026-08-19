@@ -2,6 +2,7 @@ import React from 'react';
 import Link from 'next/link';
 import { User, UserRole, WeeklySchedule } from '@/types';
 import { getStaffProfile, StaffProfilePayload, updateStaffProfile } from '@/services/authService';
+import ProfilePhotoField from '@/components/ProfilePhotoField';
 import { useAuth } from '@/providers/AuthProvider';
 import { PRABHUPADA_BOOK_LISTS } from '@/constants';
 import { ApiError } from '@/lib/api';
@@ -21,6 +22,7 @@ const bookStatuses = ['Yet to Start', 'Just Started', 'Ongoing', 'Completed'];
 type BookSize = keyof typeof PRABHUPADA_BOOK_LISTS;
 
 const formFromUser = (user: User): StaffProfilePayload => ({
+  avatar: user.avatar || '',
   name: user.name || '',
   phoneNo: user.patientProfile?.phoneNo || '',
   profession: user.patientProfile?.profession || '',
@@ -161,8 +163,8 @@ const StaffProfile: React.FC<{ user: User }> = ({ user: initialUser }) => {
     <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
       <div className="bg-gray-900 rounded-[2.5rem] p-8 md:p-10 text-white mb-8 shadow-xl">
         <div className="flex flex-col md:flex-row md:items-center gap-6">
-          <div className="w-20 h-20 rounded-3xl bg-white/10 flex items-center justify-center text-3xl font-black">
-            {user.name.charAt(0)}
+          <div className="w-20 h-20 rounded-3xl bg-white/10 overflow-hidden flex items-center justify-center text-3xl font-black">
+            {user.avatar ? <img src={user.avatar} alt={`${user.name} profile`} className="h-full w-full object-cover" /> : user.name.charAt(0)}
           </div>
           <div>
             <p className="text-sky-200 text-sm font-black uppercase tracking-widest mb-2">Staff Profile</p>
@@ -191,6 +193,7 @@ const StaffProfile: React.FC<{ user: User }> = ({ user: initialUser }) => {
 
       {isEditing ? (
         <form onSubmit={handleSave} className="bg-white border border-gray-100 rounded-[2.5rem] p-6 md:p-8 shadow-sm space-y-8">
+          <ProfilePhotoField value={form.avatar} name={form.name} onChange={(avatar) => setForm({ ...form, avatar })} />
           <section>
             <h2 className="text-xl font-black text-gray-900 mb-5 flex items-center">
               <UserIcon size={20} className="mr-2 text-sky-600" /> Edit Basic Details

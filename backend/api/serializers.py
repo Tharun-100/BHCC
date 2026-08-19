@@ -42,6 +42,7 @@ def user_to_out(user: User) -> dict:
     data = {
         "id": str(user.id),
         "name": name,
+        "avatar": getattr(profile, "avatar_data_url", "") or None,
         "email": user.email or user.username,
         "role": role,
         "specialty": getattr(profile, "specialty", "") or None,
@@ -93,6 +94,7 @@ def public_doctor_to_out(user: User) -> dict:
     return {
         "id": str(user.id),
         "name": profile.name or user.get_full_name() or "Doctor",
+        "avatar": profile.avatar_data_url or None,
         "role": UserRole.DOCTOR,
         "specialty": profile.specialty or None,
         "department": profile.department or None,

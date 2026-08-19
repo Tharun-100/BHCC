@@ -89,6 +89,20 @@ def _truthy(value) -> bool:
     return bool(value)
 
 
+def _avatar_payload(payload: dict) -> tuple[str | None, str | None]:
+    if "avatar" not in payload:
+        return None, None
+    avatar = str(payload.get("avatar") or "").strip()
+    if not avatar:
+        return "", None
+    allowed_prefixes = ("data:image/jpeg;base64,", "data:image/png;base64,", "data:image/webp;base64,")
+    if not avatar.startswith(allowed_prefixes):
+        return None, "Profile photo must be a JPEG, PNG, or WebP image."
+    if len(avatar) > 700_000:
+        return None, "Profile photo is too large. Please choose an image smaller than 500 KB."
+    return avatar, None
+
+
 def _patient_profile_payload(payload: dict) -> tuple[dict, str | None]:
     religion = str(payload.get("religion") or "").strip()
     annual_income_range = str(payload.get("annualIncomeRange") or "").strip()
@@ -441,6 +455,9 @@ def patient_profile(request):
         return Response(user_to_out(request.user))
 
     payload = request.data or {}
+    avatar, avatar_error = _avatar_payload(payload)
+    if avatar_error:
+        return Response({"detail": avatar_error}, status=status.HTTP_400_BAD_REQUEST)
     profile_data, profile_error = _patient_profile_payload(payload)
     if profile_error:
         return Response({"detail": profile_error}, status=status.HTTP_400_BAD_REQUEST)
@@ -452,6 +469,8 @@ def patient_profile(request):
 
     for field, value in profile_data.items():
         setattr(profile, field, value)
+    if avatar is not None:
+        profile.avatar_data_url = avatar
 
     request.user.save(update_fields=["first_name"])
     profile.save()
@@ -469,6 +488,9 @@ def staff_profile(request):
         return Response(user_to_out(request.user))
 
     payload = request.data or {}
+    avatar, avatar_error = _avatar_payload(payload)
+    if avatar_error:
+        return Response({"detail": avatar_error}, status=status.HTTP_400_BAD_REQUEST)
     name = str(payload.get("name") or "").strip()
     common_profile = _common_profile_payload(payload)
     spiritual_profile, spiritual_error = _spiritual_profile_payload(payload)
@@ -483,6 +505,8 @@ def staff_profile(request):
         setattr(profile, field, value)
     for field, value in spiritual_profile.items():
         setattr(profile, field, value)
+    if avatar is not None:
+        profile.avatar_data_url = avatar
 
     if profile.role == UserRole.DOCTOR:
         profile.department = str(payload.get("department") or "").strip()

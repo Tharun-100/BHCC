@@ -3,19 +3,21 @@ import React from 'react';
 import * as Icons from 'lucide-react';
 import { ArrowRight } from 'lucide-react';
 import Link from 'next/link';
-import { listDepartments } from '../services/clinicService';
-import { Department } from '../types';
+import { listDepartments, listDoctors } from '../services/clinicService';
+import { Department, User } from '../types';
 
 const DepartmentsPage: React.FC = () => {
   const [departments, setDepartments] = React.useState<Department[]>([]);
   const [error, setError] = React.useState('');
+  const [doctors, setDoctors] = React.useState<User[]>([]);
 
   React.useEffect(() => {
     let mounted = true;
     const load = async () => {
-      const dbRows = await listDepartments();
+      const [dbRows, doctorRows] = await Promise.all([listDepartments(), listDoctors()]);
       if (!mounted) return;
       setDepartments(dbRows);
+      setDoctors(doctorRows);
     };
     load().catch(() => setError('Services could not be loaded. Please try again.'));
     return () => {
@@ -44,6 +46,7 @@ const DepartmentsPage: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
           {departments.map((dept) => {
             const Icon = (Icons as any)[dept.icon] || Icons.Heart;
+            const departmentDoctors = doctors.filter((doctor) => doctor.department?.toLowerCase() === dept.name.toLowerCase());
             return (
               <div id={`department-${dept.id}`} key={dept.id} className="bg-white rounded-[2rem] p-10 border border-gray-100 shadow-sm hover:border-sky-400 hover:shadow-xl target:border-sky-500 target:ring-4 target:ring-sky-100 transition-all group overflow-hidden relative">
                 <div className="absolute top-0 right-0 w-32 h-32 bg-sky-50 rounded-bl-[5rem] -mr-8 -mt-8 transition-transform group-hover:scale-110"></div>
@@ -57,6 +60,11 @@ const DepartmentsPage: React.FC = () => {
                   <p className="text-gray-500 mb-8 leading-relaxed">
                     {dept.description}
                   </p>
+                  <div className="mb-8 space-y-3">
+                    <h4 className="text-xs font-black uppercase tracking-widest text-gray-400">Available doctors</h4>
+                    {departmentDoctors.map((doctor) => <div key={doctor.id} className="rounded-2xl border border-gray-100 bg-gray-50 p-4"><div className="flex items-center gap-3"><div className="h-12 w-12 shrink-0 overflow-hidden rounded-2xl bg-sky-100 flex items-center justify-center font-black text-sky-700">{doctor.avatar ? <img src={doctor.avatar} alt={`${doctor.name} profile`} className="h-full w-full object-cover" /> : doctor.name.charAt(0)}</div><div className="min-w-0"><p className="font-black text-gray-900">{doctor.name}</p><p className="text-sm text-sky-700">{[doctor.qualification, doctor.specialty].filter(Boolean).join(' · ')}</p><p className="text-xs text-gray-500">{doctor.experience ? `${doctor.experience} experience` : 'Experience not provided'}{doctor.fee ? ` · ₹${doctor.fee}` : ''}</p></div></div><Link href={`/login?next=${encodeURIComponent(`/book?department=${encodeURIComponent(dept.name)}`)}`} className="mt-3 block rounded-xl bg-sky-600 py-2 text-center text-sm font-black text-white hover:bg-sky-700">Patient login & book</Link></div>)}
+                    {departmentDoctors.length === 0 && <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-800">No doctor is currently assigned to this department.</p>}
+                  </div>
                   
                   <div className="flex items-center justify-between pt-8 border-t border-gray-50">
                     <span className="text-sm font-bold text-sky-600">Doctor Consultation</span>

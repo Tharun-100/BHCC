@@ -4,6 +4,7 @@ import { getPatientProfile, updatePatientProfile } from '@/services/authService'
 import { PRABHUPADA_BOOK_LISTS } from '@/constants';
 import { useAuth } from '@/providers/AuthProvider';
 import { BookOpen, Edit3, Heart, Home, Info, Loader2, Mail, Phone, Save, User as UserIcon, X } from 'lucide-react';
+import ProfilePhotoField from '@/components/ProfilePhotoField';
 
 const disabledSpiritualReligions = ['muslim', 'christian'];
 const religions = ['Hindu', 'Muslim', 'Christian', 'Others'];
@@ -34,6 +35,7 @@ const emptyProfile = {
 const profileFormFromUser = (user: User): PatientProfileForm => ({
   name: user.name || '',
   email: user.email || '',
+  avatar: user.avatar || '',
   ...(user.patientProfile || emptyProfile),
   prabhupadaBooks: {
     ...emptyProfile.prabhupadaBooks,
@@ -142,8 +144,8 @@ const PatientProfile: React.FC<{ initialUser: User }> = ({ initialUser }) => {
     <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
       <div className="bg-sky-900 rounded-[2.5rem] p-8 md:p-10 text-white mb-8 shadow-xl">
         <div className="flex flex-col md:flex-row md:items-center gap-6">
-          <div className="w-20 h-20 rounded-3xl bg-white/10 flex items-center justify-center text-3xl font-black">
-            {user.name.charAt(0)}
+          <div className="w-20 h-20 rounded-3xl bg-white/10 overflow-hidden flex items-center justify-center text-3xl font-black">
+            {user.avatar ? <img src={user.avatar} alt={`${user.name} profile`} className="h-full w-full object-cover" /> : user.name.charAt(0)}
           </div>
           <div>
             <p className="text-sky-200 text-sm font-black uppercase tracking-widest mb-2">Patient Profile</p>
@@ -176,6 +178,7 @@ const PatientProfile: React.FC<{ initialUser: User }> = ({ initialUser }) => {
 
       {isEditing ? (
         <form onSubmit={handleSave} className="bg-white border border-gray-100 rounded-[2.5rem] p-6 md:p-8 shadow-sm space-y-8">
+          <ProfilePhotoField value={formData.avatar} name={formData.name} onChange={(avatar) => setFormData({ ...formData, avatar })} />
           <section>
             <h2 className="text-xl font-black text-gray-900 mb-5 flex items-center">
               <UserIcon size={20} className="mr-2 text-sky-600" /> Edit Basic Details

@@ -18,6 +18,7 @@ class UserProfile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="profile")
     role = models.CharField(max_length=20, choices=UserRole.choices, default=UserRole.PATIENT)
     name = models.CharField(max_length=120, blank=True, default="")
+    avatar_data_url = models.TextField(blank=True, default="")
 
     address = models.TextField(blank=True, default="")
     phone_no = models.CharField(max_length=20, blank=True, default="")

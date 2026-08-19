@@ -22,6 +22,7 @@ type StaffOtpStartResponse = {
 };
 
 export type StaffProfilePayload = {
+  avatar?: string;
   name: string;
   phoneNo: string;
   profession: string;

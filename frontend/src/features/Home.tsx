@@ -179,8 +179,8 @@ const Home: React.FC = () => {
             {doctors.map((doc) => (
               <div key={doc.id} className="bg-white rounded-3xl overflow-hidden shadow-sm hover:shadow-xl transition-all group">
                 <div className="h-64 overflow-hidden relative bg-sky-100 flex items-center justify-center">
-                  <div className="w-28 h-28 rounded-full bg-white text-sky-700 shadow-sm flex items-center justify-center text-4xl font-black">
-                    {getDoctorInitials(doc.name)}
+                  <div className="w-28 h-28 rounded-full overflow-hidden bg-white text-sky-700 shadow-sm flex items-center justify-center text-4xl font-black">
+                    {doc.avatar ? <img src={doc.avatar} alt={`${doc.name} profile`} className="h-full w-full object-cover" /> : getDoctorInitials(doc.name)}
                   </div>
                   <div className="absolute top-4 right-4 bg-sky-600 text-white text-xs font-bold px-3 py-1 rounded-full">{doc.experience} Exp</div>
                 </div>
