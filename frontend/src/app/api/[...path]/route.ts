@@ -10,12 +10,7 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path: st
   const trailingSlash = request.nextUrl.pathname.endsWith('/') ? '/' : '';
   const upstreamUrl = `${backendBase()}/api/${path.map(encodeURIComponent).join('/')}${trailingSlash}${request.nextUrl.search}`;
   const headers = new Headers(request.headers);
-  // Django runs over HTTP inside Docker, while the browser-facing request is
-  // HTTPS. Preserve the public host and proxy scheme so SecurityMiddleware
-  // does not issue a permanent redirect to the internal Docker hostname.
-  headers.set('host', request.nextUrl.host);
-  headers.set('x-forwarded-host', request.nextUrl.host);
-  headers.set('x-forwarded-proto', 'https');
+  headers.delete('host');
   headers.delete('content-length');
   headers.delete('connection');
 
