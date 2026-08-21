@@ -10,6 +10,7 @@ from django.db import transaction
 from django.http import FileResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from django.utils.dateparse import parse_date
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -205,7 +206,14 @@ def appointment_prescription(request, appointment_id: int):
         consultation.observations = str(payload.get("observations") or "").strip()
         consultation.diagnosis = str(payload.get("diagnosis") or "").strip()
         consultation.advice = str(payload.get("advice") or "").strip()
-        consultation.follow_up_date = payload.get("followUpDate") or None
+        follow_up_date = payload.get("followUpDate") or None
+        if follow_up_date:
+            if not isinstance(follow_up_date, str) or not (follow_up_date := parse_date(follow_up_date)):
+                return Response(
+                    {"followUpDate": "Enter a valid date in YYYY-MM-DD format."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        consultation.follow_up_date = follow_up_date
         consultation.save()
         if not prescription:
             prescription = Prescription.objects.create(consultation=consultation, prescription_number=f"RX-{appointment.id:06d}-V1", version=1)

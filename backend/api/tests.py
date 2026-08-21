@@ -68,8 +68,10 @@ class ClinicalWorkflowTests(TestCase):
 
     def test_doctor_finalizes_prescription_and_patient_can_download_pdf(self) -> None:
         client = APIClient(); client.force_authenticate(self.doctor)
-        response = client.put(f"/api/appointments/{self.appointment.pk}/prescription/", {"diagnosis": "Seasonal allergy", "medicines": [{"name": "Cetirizine", "dose": "1 tablet", "frequency": "Night", "duration": "5 days"}], "tests": []}, format="json")
+        follow_up_date = date.today() + timedelta(days=7)
+        response = client.put(f"/api/appointments/{self.appointment.pk}/prescription/", {"diagnosis": "Seasonal allergy", "followUpDate": follow_up_date.isoformat(), "medicines": [{"name": "Cetirizine", "dose": "1 tablet", "frequency": "Night", "duration": "5 days"}], "tests": []}, format="json")
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["followUpDate"], follow_up_date.isoformat())
         prescription_id = response.data["id"]
         response = client.post(f"/api/prescriptions/{prescription_id}/finalize/", {}, format="json")
         self.assertEqual(response.status_code, 200)
@@ -83,6 +85,16 @@ class ClinicalWorkflowTests(TestCase):
         client.force_authenticate(self.admin)
         self.assertEqual(client.get("/api/prescriptions/").status_code, 200)
         self.assertEqual(client.get(f"/api/prescriptions/{prescription_id}/pdf/").status_code, 200)
+
+    def test_prescription_rejects_invalid_follow_up_date(self) -> None:
+        client = APIClient(); client.force_authenticate(self.doctor)
+        response = client.put(
+            f"/api/appointments/{self.appointment.pk}/prescription/",
+            {"diagnosis": "Seasonal allergy", "followUpDate": "not-a-date"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("followUpDate", response.data)
 
     def test_admin_can_list_all_profiles_and_clinical_history_blocks_deletion(self) -> None:
         client = APIClient(); client.force_authenticate(self.admin)
