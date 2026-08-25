@@ -66,8 +66,6 @@ const Navbar: React.FC<NavbarProps> = ({ user, onLogout }) => {
               </>
             )}
 
-            {user && <NavLink to="/service-reporting">Service Reporting</NavLink>}
-
             {user?.role === UserRole.PATIENT && (
               <>
                 <NavLink to="/dashboard">Dashboard</NavLink>
@@ -193,7 +191,6 @@ const Navbar: React.FC<NavbarProps> = ({ user, onLogout }) => {
                 <p className="text-sm font-bold text-gray-900">{user.name}</p>
               </div>
               <Link href="/dashboard" className="block py-2 text-gray-700" onClick={() => setIsOpen(false)}>Dashboard</Link>
-              <Link href="/service-reporting" className="block py-2 text-gray-700" onClick={() => setIsOpen(false)}>Service Reporting</Link>
               {user.role !== UserRole.PUBLIC && (
                 <Link href="/dashboard/profile" className="block py-2 text-gray-700" onClick={() => setIsOpen(false)}>Profile</Link>
               )}

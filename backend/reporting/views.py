@@ -2,16 +2,40 @@ from __future__ import annotations
 
 from datetime import datetime, time, timedelta
 
+from django.contrib.auth import authenticate
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 from rest_framework import status
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.decorators import api_view, authentication_classes, permission_classes
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework_simplejwt.tokens import RefreshToken
+
+from api.authentication import ReportingJWTAuthentication
 
 from .models import Appreciation, GroupMembership, LeaderFeedback, ReportRevision, ReportingPeriod, ServiceCategory, ServiceGroup, ServiceTask, TaskUpdate, WeeklyServiceReport
+
+
+def reporting_endpoint(view):
+    return authentication_classes([ReportingJWTAuthentication])(view)
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def reporting_login(request):
+    email = str(request.data.get("email") or "").strip().lower()
+    password = request.data.get("password") or ""
+    user = authenticate(request, username=email, password=password) if email and password else None
+    if not user:
+        return Response({"detail": "Invalid reporting credentials."}, status=status.HTTP_401_UNAUTHORIZED)
+    memberships = _active_memberships(user)
+    if not memberships.exists():
+        return Response({"detail": "This account has no active service-reporting membership."}, status=status.HTTP_403_FORBIDDEN)
+    refresh = RefreshToken.for_user(user)
+    refresh["scope"] = "reporting"
+    return Response({"access": str(refresh.access_token), "refresh": str(refresh), "memberships": [_membership_out(row) for row in memberships]})
 
 
 def _display_name(membership: GroupMembership) -> str:
@@ -92,6 +116,7 @@ def _snapshot(row: WeeklyServiceReport) -> dict:
 
 
 @api_view(["GET"])
+@reporting_endpoint
 @permission_classes([IsAuthenticated])
 def reporting_me(request):
     memberships = list(_active_memberships(request.user))
@@ -99,6 +124,7 @@ def reporting_me(request):
 
 
 @api_view(["GET"])
+@reporting_endpoint
 @permission_classes([IsAuthenticated])
 def current_report(request):
     membership = _selected_membership(request)
@@ -128,6 +154,7 @@ def _clean_date(value, field):
 
 
 @api_view(["GET", "PUT"])
+@reporting_endpoint
 @permission_classes([IsAuthenticated])
 def report_detail(request, pk: int):
     report = get_object_or_404(WeeklyServiceReport.objects.select_related("membership__group", "membership__user", "period"), pk=pk)
@@ -197,6 +224,7 @@ def report_detail(request, pk: int):
 
 
 @api_view(["POST"])
+@reporting_endpoint
 @permission_classes([IsAuthenticated])
 def submit_report(request, pk: int):
     report = get_object_or_404(WeeklyServiceReport.objects.select_related("membership", "period"), pk=pk, membership__user=request.user, membership__is_active=True)
@@ -210,6 +238,7 @@ def submit_report(request, pk: int):
 
 
 @api_view(["POST"])
+@reporting_endpoint
 @permission_classes([IsAuthenticated])
 def reopen_report(request, pk: int):
     report = get_object_or_404(WeeklyServiceReport.objects.select_related("membership__group"), pk=pk, status=WeeklyServiceReport.Status.SUBMITTED)
@@ -225,6 +254,7 @@ def reopen_report(request, pk: int):
 
 
 @api_view(["GET"])
+@reporting_endpoint
 @permission_classes([IsAuthenticated])
 def group_reports(request):
     membership = _selected_membership(request, leadership=True)
@@ -238,6 +268,7 @@ def group_reports(request):
 
 
 @api_view(["GET", "POST"])
+@reporting_endpoint
 @permission_classes([IsAuthenticated])
 def manage_group(request):
     membership = _selected_membership(request)
@@ -281,6 +312,7 @@ def manage_group(request):
 
 
 @api_view(["POST"])
+@reporting_endpoint
 @permission_classes([IsAuthenticated])
 def add_feedback(request, pk: int):
     report = get_object_or_404(WeeklyServiceReport.objects.select_related("membership__group"), pk=pk, status=WeeklyServiceReport.Status.SUBMITTED)

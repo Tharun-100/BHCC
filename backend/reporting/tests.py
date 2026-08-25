@@ -32,6 +32,20 @@ class ReportingWorkflowTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertFalse(response.data["hasAccess"])
 
+    def test_reporting_and_clinical_sessions_are_scope_isolated(self):
+        client = APIClient()
+        response = client.post("/api/reporting/auth/login/", {"email": self.member.email, "password": "test-password"}, format="json")
+        self.assertEqual(response.status_code, 200)
+        client.credentials(HTTP_AUTHORIZATION=f"Bearer {response.data['access']}")
+        self.assertEqual(client.get("/api/reporting/me/").status_code, 200)
+        self.assertEqual(client.get("/api/auth/me/").status_code, 401)
+
+        client = APIClient()
+        response = client.post("/api/auth/login/", {"email": self.member.email, "password": "test-password"}, format="json")
+        self.assertEqual(response.status_code, 200)
+        client.credentials(HTTP_AUTHORIZATION=f"Bearer {response.data['access']}")
+        self.assertEqual(client.get("/api/reporting/me/").status_code, 401)
+
     def test_member_saves_and_submits_isolated_weekly_report(self):
         client = self.client_for(self.member)
         response = client.get(f"/api/reporting/reports/current/?membershipId={self.member_membership.pk}")

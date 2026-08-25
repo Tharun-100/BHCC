@@ -10,6 +10,7 @@ import AdminSidebar from '@/components/AdminSidebar';
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth();
   const pathname = usePathname();
+  if (pathname.startsWith('/service-reporting')) return <>{children}</>;
   const showAdminSidebar = user?.role === UserRole.ADMIN && pathname.startsWith('/dashboard');
   return (
     <div className="flex flex-col min-h-screen bg-gray-50">

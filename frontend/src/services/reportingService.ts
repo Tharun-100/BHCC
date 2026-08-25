@@ -1,5 +1,5 @@
-import { apiFetch } from '@/lib/api';
-import { getAccessToken } from '@/lib/storage';
+import { ApiError } from '@/lib/api';
+import { clearReportingTokens, getReportingAccessToken, getReportingRefreshToken, setReportingTokens } from '@/lib/reportingStorage';
 
 export type ReportingRole = 'MEMBER' | 'LEADER' | 'ADMIN';
 export interface ReportingMembership { id:string; groupId:string; groupName:string; role:ReportingRole; name:string; email:string }
@@ -9,13 +9,24 @@ export interface WeeklyReport { id:string; membership:ReportingMembership; weekS
 export interface GroupReportSummary { weekStart:string; weekEnd:string; reports:WeeklyReport[]; pendingMembers:ReportingMembership[] }
 export interface GroupManagement { group:{id:string;name:string;description:string}; members:Array<ReportingMembership&{isActive:boolean}>; categories:Array<{id:string;name:string;isActive:boolean}> }
 
-const auth = () => ({ authToken: getAccessToken() || undefined });
-export const getReportingAccess = () => apiFetch<{hasAccess:boolean;memberships:ReportingMembership[]}>('/api/reporting/me/', auth());
-export const getCurrentReport = (membershipId:string) => apiFetch<WeeklyReport>(`/api/reporting/reports/current/?membershipId=${encodeURIComponent(membershipId)}`, auth());
-export const saveWeeklyReport = (report:WeeklyReport) => apiFetch<WeeklyReport>(`/api/reporting/reports/${report.id}/`, {method:'PUT',...auth(),body:JSON.stringify(report)});
-export const submitWeeklyReport = (id:string) => apiFetch<WeeklyReport>(`/api/reporting/reports/${id}/submit/`, {method:'POST',...auth(),body:'{}'});
-export const getGroupReports = (membershipId:string) => apiFetch<GroupReportSummary>(`/api/reporting/group/reports/?membershipId=${encodeURIComponent(membershipId)}`, auth());
-export const addReportFeedback = (id:string,comment:string) => apiFetch<WeeklyReport>(`/api/reporting/reports/${id}/feedback/`, {method:'POST',...auth(),body:JSON.stringify({comment})});
-export const reopenWeeklyReport = (id:string) => apiFetch<WeeklyReport>(`/api/reporting/reports/${id}/reopen/`, {method:'POST',...auth(),body:'{}'});
-export const getGroupManagement = (membershipId:string) => apiFetch<GroupManagement>(`/api/reporting/group/manage/?membershipId=${encodeURIComponent(membershipId)}`, auth());
-export const updateGroupManagement = (membershipId:string,payload:Record<string,unknown>) => apiFetch<GroupManagement>('/api/reporting/group/manage/', {method:'POST',...auth(),body:JSON.stringify({membershipId,...payload})});
+async function reportingFetch<T>(path:string,init:RequestInit={}):Promise<T>{
+ const request=async(token:string|null)=>fetch(`/api/reporting${path}`,{...init,headers:{'Content-Type':'application/json',...(token?{Authorization:`Bearer ${token}`}:{})}});
+ let response=await request(getReportingAccessToken());
+ if(response.status===401&&getReportingRefreshToken()){
+  const refreshed=await fetch('/api/auth/token/refresh/',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({refresh:getReportingRefreshToken()})});
+  if(refreshed.ok){const data=await refreshed.json() as {access:string;refresh?:string};setReportingTokens(data.access,data.refresh||getReportingRefreshToken()||undefined);response=await request(data.access);}else clearReportingTokens();
+ }
+ const contentType=response.headers.get('content-type')||'';const body=contentType.includes('application/json')?await response.json().catch(()=>null):await response.text();
+ if(!response.ok){const message=typeof body==='object'&&body&&'detail'in body?String(body.detail):`Request failed: ${response.status}`;throw new ApiError(message,response.status,body);}return body as T;
+}
+export const loginToReporting = async(email:string,password:string)=>{const data=await reportingFetch<{access:string;refresh:string;memberships:ReportingMembership[]}>('/auth/login/',{method:'POST',body:JSON.stringify({email,password})});setReportingTokens(data.access,data.refresh);return data;};
+export const logoutFromReporting=()=>clearReportingTokens();
+export const getReportingAccess = () => reportingFetch<{hasAccess:boolean;memberships:ReportingMembership[]}>('/me/');
+export const getCurrentReport = (membershipId:string) => reportingFetch<WeeklyReport>(`/reports/current/?membershipId=${encodeURIComponent(membershipId)}`);
+export const saveWeeklyReport = (report:WeeklyReport) => reportingFetch<WeeklyReport>(`/reports/${report.id}/`, {method:'PUT',body:JSON.stringify(report)});
+export const submitWeeklyReport = (id:string) => reportingFetch<WeeklyReport>(`/reports/${id}/submit/`, {method:'POST',body:'{}'});
+export const getGroupReports = (membershipId:string) => reportingFetch<GroupReportSummary>(`/group/reports/?membershipId=${encodeURIComponent(membershipId)}`);
+export const addReportFeedback = (id:string,comment:string) => reportingFetch<WeeklyReport>(`/reports/${id}/feedback/`, {method:'POST',body:JSON.stringify({comment})});
+export const reopenWeeklyReport = (id:string) => reportingFetch<WeeklyReport>(`/reports/${id}/reopen/`, {method:'POST',body:'{}'});
+export const getGroupManagement = (membershipId:string) => reportingFetch<GroupManagement>(`/group/manage/?membershipId=${encodeURIComponent(membershipId)}`);
+export const updateGroupManagement = (membershipId:string,payload:Record<string,unknown>) => reportingFetch<GroupManagement>('/group/manage/', {method:'POST',body:JSON.stringify({membershipId,...payload})});
