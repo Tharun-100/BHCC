@@ -73,9 +73,20 @@ const Footer: React.FC = () => {
           </div>
         </div>
 
+        <div className="border-t border-gray-800 py-8">
+          <h3 className="mb-4 text-sm font-bold text-white">Policies & Payment Information</h3>
+          <div className="grid grid-cols-2 gap-3 text-xs text-gray-400 sm:grid-cols-3 lg:grid-cols-6">
+            <Link href="/pricing" className="hover:text-sky-400">Consultation Pricing</Link>
+            <Link href="/cancellation-policy" className="hover:text-sky-400">Cancellation Policy</Link>
+            <Link href="/refund-policy" className="hover:text-sky-400">Refund Policy</Link>
+            <Link href="/service-delivery-policy" className="hover:text-sky-400">Service Delivery</Link>
+            <Link href="/terms" className="hover:text-sky-400">Terms & Conditions</Link>
+            <Link href="/privacy" className="hover:text-sky-400">Privacy Policy</Link>
+          </div>
+        </div>
         <div className="border-t border-gray-800 pt-8 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-gray-500">
           <p>(c) {new Date().getFullYear()} {CLINIC_NAME}. All rights reserved.</p>
-          <div className="flex gap-4"><Link href="/privacy" className="hover:text-gray-300">Privacy</Link><Link href="/terms" className="hover:text-gray-300">Terms</Link><Link href="/stafflogin" className="text-gray-700 hover:text-gray-400 transition-colors">Internal access</Link></div>
+          <div className="flex gap-4"><Link href="/about" className="hover:text-gray-300">About Us</Link><Link href="/contact" className="hover:text-gray-300">Contact Us</Link><Link href="/stafflogin" className="text-gray-700 hover:text-gray-400 transition-colors">Internal access</Link></div>
         </div>
       </div>
     </footer>
