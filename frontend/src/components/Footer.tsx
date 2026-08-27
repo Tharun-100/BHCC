@@ -20,6 +20,8 @@ export default function Footer(){
    <section><h2 className="mb-4 text-lg font-black text-white">Our Address</h2><p className="mb-3 text-xl font-black text-white">Bhaktivedanta Health Care Center</p><p className="flex items-start gap-3 leading-8"><MapPin className="mt-1 shrink-0 text-sky-500" size={20}/><span>{CLINIC_ADDRESS}</span></p><p className="mt-4 flex items-center gap-3"><Phone className="text-sky-500" size={19}/><a className={linkClass} href={`tel:${CLINIC_PHONE.replace(/\s/g,'')}`}>{CLINIC_PHONE}</a></p><p className="mt-3 flex items-start gap-3 break-all"><Mail className="mt-1 shrink-0 text-sky-500" size={19}/><a className={linkClass} href={`mailto:${CLINIC_EMAIL}`}>{CLINIC_EMAIL}</a></p></section>
    <section><h2 className="mb-4 text-lg font-black text-white">Policies & Support</h2><ul className="space-y-3 text-base"><li><Link className={linkClass} href="/terms">Terms & Conditions</Link></li><li><Link className={linkClass} href="/privacy">Privacy Policy</Link></li><li><Link className={linkClass} href="/cancellation-policy">Cancellation Policy</Link></li><li><Link className={linkClass} href="/refund-policy">Refund Policy</Link></li><li><Link className={linkClass} href="/service-delivery-policy">Service Delivery Policy</Link></li><li><Link className={linkClass} href="/stafflogin">Internal Access</Link></li></ul></section>
   </div>
-  <div className="border-t border-gray-800 bg-gray-950 px-6 py-5 text-center text-sm font-semibold text-gray-400">Copyright © {new Date().getFullYear()} {CLINIC_NAME}. All Rights Reserved.</div>
+  <div className="border-t border-gray-800 bg-gray-950 px-6 py-5 text-center text-sm font-semibold text-gray-400">
+   Copyright © {new Date().getFullYear()} Krishna Loka Heritage Trust. {CLINIC_NAME} is a healthcare initiative of the Trust. All Rights Reserved.
+  </div>
  </footer>;
 }

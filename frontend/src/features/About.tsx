@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { ShieldCheck, Heart, UserCheck, Star, Eye, Target } from 'lucide-react';
+import { ShieldCheck, Heart, UserCheck, Star, Eye, Target, ChevronDown, Landmark } from 'lucide-react';
 import { CLINIC_NAME } from '../constants';
 
 const About: React.FC = () => {
@@ -49,19 +49,26 @@ const About: React.FC = () => {
         </div>
       </section>
 
-      {/* Vision and Mission */}
+      {/* About details */}
       <section className="py-24 bg-sky-950 text-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="max-w-3xl mb-16">
+          <div className="max-w-3xl mb-10">
             <p className="text-sm font-bold text-sky-300 uppercase tracking-widest mb-4">Our Direction</p>
-            <h2 className="text-4xl font-black mb-5">Vision and Mission</h2>
+            <h2 className="text-4xl font-black mb-5">About Our Institution</h2>
             <p className="text-lg text-sky-100 leading-relaxed">
               Building a healthcare institution where clinical excellence, research, compassion, and spiritual growth work together.
             </p>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-16">
-            <div className="lg:col-span-5">
+          <div className="space-y-5">
+            <details open className="group rounded-3xl border border-sky-800 bg-sky-900/40 overflow-hidden">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-6 py-6 sm:px-8 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300">
+                <span className="text-xl sm:text-2xl font-bold">Vision, Mission &amp; Quality Policy</span>
+                <ChevronDown className="shrink-0 transition-transform duration-200 group-open:rotate-180" aria-hidden="true" />
+              </summary>
+
+              <div className="grid grid-cols-1 xl:grid-cols-3 border-t border-sky-800">
+                <article className="p-6 sm:p-8 xl:border-r xl:border-sky-800">
               <div className="flex items-center gap-4 mb-8">
                 <div className="w-12 h-12 bg-sky-800 text-sky-200 rounded-lg flex items-center justify-center shrink-0">
                   <Eye size={24} />
@@ -76,9 +83,9 @@ const About: React.FC = () => {
                   To establish a world-class research center bringing Vedic insights to manifestation in the healthcare domain and to bring forth healthcare improvement in novel ways.
                 </p>
               </div>
-            </div>
+                </article>
 
-            <div className="lg:col-span-7 lg:border-l lg:border-sky-800 lg:pl-16">
+                <article className="p-6 sm:p-8 border-t border-sky-800 xl:border-t-0 xl:border-r">
               <div className="flex items-center gap-4 mb-8">
                 <div className="w-12 h-12 bg-sky-800 text-sky-200 rounded-lg flex items-center justify-center shrink-0">
                   <Target size={24} />
@@ -108,7 +115,47 @@ const About: React.FC = () => {
                   <p>Integrate medical treatment with high-end research, thereby leading to publications and patents.</p>
                 </li>
               </ol>
-            </div>
+                </article>
+
+                <article className="p-6 sm:p-8 border-t border-sky-800 xl:border-t-0">
+                  <div className="flex items-center gap-4 mb-8">
+                    <div className="w-12 h-12 bg-sky-800 text-sky-200 rounded-lg flex items-center justify-center shrink-0">
+                      <ShieldCheck size={24} />
+                    </div>
+                    <h3 className="text-3xl font-bold">Quality Policy</h3>
+                  </div>
+                  <div className="space-y-6 text-sky-100 leading-relaxed">
+                    <p>
+                      Bhaktivedanta Health Care Center is committed to providing compassionate, ethical, accessible, and patient-centred healthcare. We strive to deliver safe and evidence-based care through qualified professionals, clear communication, respect for patient dignity and confidentiality, responsible use of resources, and continual improvement of our services.
+                    </p>
+                    <p>
+                      Guided by integrity and spiritual compassion, we are committed to serving every person with fairness and without discrimination while working toward applicable healthcare quality and safety standards.
+                    </p>
+                  </div>
+                </article>
+              </div>
+            </details>
+
+            <details className="group rounded-3xl border border-sky-800 bg-sky-900/40 overflow-hidden">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-6 py-6 sm:px-8 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300">
+                <span className="flex items-center gap-3 text-xl sm:text-2xl font-bold">
+                  <Landmark className="text-sky-300" aria-hidden="true" />
+                  About Krishna Loka Heritage Trust
+                </span>
+                <ChevronDown className="shrink-0 transition-transform duration-200 group-open:rotate-180" aria-hidden="true" />
+              </summary>
+              <div className="border-t border-sky-800 px-6 py-8 sm:px-8 text-sky-100 leading-relaxed space-y-6">
+                <p>
+                  Bhaktivedanta Health Care Center is a healthcare initiative of Krishna Loka Heritage Trust. Through this initiative, the Trust advances its charitable objective of supporting medical treatment for people from all walks of life through clinics, hospitals, medical camps, and related healthcare activities, without discrimination based on financial status, caste, colour, religion, sex, creed, or physical disability.
+                </p>
+                <p>
+                  The wider objectives of Krishna Loka Heritage Trust include promoting India&apos;s cultural and spiritual heritage, supporting nutritious food and medical aid for people in need, advancing education, encouraging rural development and environmental protection, supporting cow protection and traditional arts, and contributing to charitable organisations with similar objectives.
+                </p>
+                <p>
+                  Through Bhaktivedanta Health Care Center, the Trust seeks to translate these values into compassionate, ethical, and responsible healthcare for the community.
+                </p>
+              </div>
+            </details>
           </div>
         </div>
       </section>
