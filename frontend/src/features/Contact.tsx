@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
-import { MapPin, Phone, Mail, Clock, Send, Loader2, CheckCircle } from 'lucide-react';
-import { CLINIC_ADDRESS, CLINIC_PHONE, CLINIC_EMAIL } from '../constants';
+import { MapPin, Mail, Send, Loader2 } from 'lucide-react';
+import { CLINIC_ADDRESS, CLINIC_EMAIL } from '../constants';
 import { useAuth } from '@/providers/AuthProvider';
 import { apiFetch } from '@/lib/api';
 import { getAccessToken } from '@/lib/storage';
@@ -72,7 +72,10 @@ const Contact: React.FC = () => {
                   <p className="text-xs font-bold text-sky-600 uppercase tracking-widest mb-2">Visit the clinic</p>
                   <p className="text-lg font-bold text-gray-900 leading-relaxed">{CLINIC_ADDRESS}</p>
                 </div>
-                <p className="text-sm text-gray-500">Call us for directions before travelling.</p>
+                <p className="flex items-start gap-3 break-all text-sm text-gray-600">
+                  <Mail className="mt-0.5 shrink-0 text-sky-600" size={18} />
+                  <a className="hover:text-sky-700 hover:underline" href={`mailto:${CLINIC_EMAIL}`}>{CLINIC_EMAIL}</a>
+                </p>
               </div>
             </div>
           </div>

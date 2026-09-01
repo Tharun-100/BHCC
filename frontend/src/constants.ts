@@ -3,8 +3,7 @@ import { User } from './types';
 
 export const CLINIC_NAME = "Bhaktivedanta Health Care Center";
 export const CLINIC_ADDRESS = "ISKCON Newtown, Near Shapoorji Bus Terminus, Ekajul, Action Area III, Newtown, Kolkata, Hudarait, West Bengal 700135";
-export const CLINIC_PHONE = "+91 9948434604";
-export const CLINIC_EMAIL = "vuttipallytharun17@gmail.com";
+export const CLINIC_EMAIL = "bhaktivedantahealthcarecentre@gmail.com";
 
 export const PRABHUPADA_BOOK_LISTS = {
   small: [
