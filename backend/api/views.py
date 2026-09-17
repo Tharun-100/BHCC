@@ -948,11 +948,13 @@ def registrations(request):
             if camp.capacity and camp.registrations.count() >= camp.capacity:
                 return Response({"detail": "This camp has reached its registration capacity."}, status=status.HTTP_409_CONFLICT)
 
-            rooms = CampDepartmentRoom.objects.select_for_update().filter(camp=camp, department=department, is_active=True).annotate(patient_count=Count("registrations")).order_by("patient_count", "room_number")
+            rooms = CampDepartmentRoom.objects.select_for_update().filter(camp=camp, department=department, is_active=True).order_by("room_number")
             requested_room_id = request.data.get("roomId")
             if requested_room_id:
                 rooms = rooms.filter(pk=requested_room_id)
-            room = next((candidate for candidate in rooms if not candidate.capacity or candidate.patient_count < candidate.capacity), None)
+            room_loads = [(candidate, candidate.registrations.count()) for candidate in rooms]
+            room_loads.sort(key=lambda item: (item[1], item[0].room_number))
+            room = next((candidate for candidate, patient_count in room_loads if not candidate.capacity or patient_count < candidate.capacity), None)
             if not room:
                 return Response({"detail": "No available room is configured for this camp and department."}, status=status.HTTP_409_CONFLICT)
 

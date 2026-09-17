@@ -62,7 +62,7 @@ class ClinicOperationsTests(TestCase):
         self.assertEqual(response.status_code, 201)
         camp_id = response.data["id"]
         for room_number in ("101", "102"):
-            response = admin_client.post(f"/api/free-camps/{camp_id}/rooms/", {"departmentId":str(self.department.id), "roomNumber":room_number, "capacity":10}, format="json")
+            response = admin_client.post(f"/api/free-camps/{camp_id}/rooms/", {"departmentId":str(self.department.id), "roomNumber":room_number, "capacity":1}, format="json")
             self.assertEqual(response.status_code, 201)
         self.assertEqual(CampDepartmentRoom.objects.filter(camp_id=camp_id).count(), 2)
         self.assertEqual(admin_client.patch(f"/api/free-camps/{camp_id}/", {"status":"OPEN"}, format="json").status_code, 200)
@@ -77,6 +77,9 @@ class ClinicOperationsTests(TestCase):
         self.assertEqual(camp_registration.registered_by, self.counter)
         self.assertEqual(counter_client.post(f"/api/registrations/{response.data['id']}/receipt-print/").status_code, 200)
         camp_registration.refresh_from_db(); self.assertEqual(camp_registration.receipt_print_count, 1)
+        second = counter_client.post("/api/registrations/", {"name":"Second Patient", "phoneNo":"9903554615", "address":"Newtown", "departmentId":str(self.department.id), "campId":camp_id, "isFreeCamp":True}, format="json")
+        self.assertEqual(second.status_code, 201)
+        self.assertEqual(second.data["roomNumber"], "102")
 
     def test_counter_cannot_create_camp_rooms(self):
         camp = FreeCamp.objects.create(name="Admin Managed", date=date.today()+timedelta(days=1), created_by=self.admin)
