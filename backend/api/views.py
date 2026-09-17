@@ -1047,17 +1047,35 @@ def free_camps(request):
     } for row in rows])
 
 
-@api_view(["PATCH"])
+@api_view(["PATCH", "DELETE"])
 @permission_classes([IsAuthenticated, IsAdmin])
 def free_camp_detail(request, pk: int):
     camp = get_object_or_404(FreeCamp, pk=pk)
+    if request.method == "DELETE":
+        if camp.registrations.exists():
+            return Response({"detail": "A camp with registered patients cannot be permanently deleted. Cancel or close it instead so patient records remain available."}, status=status.HTTP_409_CONFLICT)
+        camp.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
     for field in ("name", "location"):
         if field in request.data:
-            setattr(camp, field, str(request.data[field]).strip())
+            value = str(request.data[field]).strip()
+            if not value:
+                return Response({"detail": f"Camp {field} is required."}, status=status.HTTP_400_BAD_REQUEST)
+            setattr(camp, field, value)
     if "date" in request.data:
         camp.date = request.data["date"]
     if "capacity" in request.data:
-        camp.capacity = request.data["capacity"] or None
+        capacity = request.data["capacity"] or None
+        if capacity is not None:
+            try:
+                capacity = int(capacity)
+            except (TypeError, ValueError):
+                return Response({"detail": "Camp capacity must be a positive whole number or empty for unlimited."}, status=status.HTTP_400_BAD_REQUEST)
+            if capacity < 1:
+                return Response({"detail": "Camp capacity must be a positive whole number or empty for unlimited."}, status=status.HTTP_400_BAD_REQUEST)
+            if capacity < camp.registrations.count():
+                return Response({"detail": "Camp capacity cannot be lower than its current registration count."}, status=status.HTTP_400_BAD_REQUEST)
+        camp.capacity = capacity
     if "status" in request.data:
         if request.data["status"] not in {value for value, _ in FreeCamp.Status.choices}:
             return Response({"detail": "Invalid camp status."}, status=status.HTTP_400_BAD_REQUEST)
@@ -1100,7 +1118,14 @@ def camp_room_detail(request, pk: int):
         room.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
     if "roomNumber" in request.data:
-        room.room_number = str(request.data["roomNumber"]).strip()
+        room_number = str(request.data["roomNumber"]).strip()
+        if not room_number:
+            return Response({"detail": "Room number is required."}, status=status.HTTP_400_BAD_REQUEST)
+        room.room_number = room_number
+    if "departmentId" in request.data and str(request.data["departmentId"]) != str(room.department_id):
+        if room.registrations.exists():
+            return Response({"detail": "The department cannot be changed after patients have been assigned to this room. Add a new room instead."}, status=status.HTTP_409_CONFLICT)
+        room.department = get_object_or_404(Department, pk=request.data["departmentId"])
     if "capacity" in request.data:
         capacity = request.data["capacity"] or None
         if capacity is not None:
@@ -1108,12 +1133,18 @@ def camp_room_detail(request, pk: int):
                 capacity = int(capacity)
             except (TypeError, ValueError):
                 return Response({"detail": "Room capacity must be a positive whole number or empty for unlimited."}, status=status.HTTP_400_BAD_REQUEST)
+            if capacity < 1:
+                return Response({"detail": "Room capacity must be a positive whole number or empty for unlimited."}, status=status.HTTP_400_BAD_REQUEST)
             if capacity < room.registrations.count():
                 return Response({"detail": "Room capacity cannot be lower than its current registration count."}, status=status.HTTP_400_BAD_REQUEST)
         room.capacity = capacity
     if "isActive" in request.data:
         room.is_active = bool(request.data["isActive"])
-    room.save()
+    try:
+        room.save()
+    except IntegrityError:
+        return Response({"detail": "That room is already mapped to this department for the camp."}, status=status.HTTP_409_CONFLICT)
+    room.camp.departments.add(room.department)
     return Response({"ok": True})
 
 

@@ -229,8 +229,9 @@ export const createFreeCamp = async (payload: {name:string; date:string; locatio
 };
 
 export const updateFreeCamp = async (id:string, payload:Partial<{name:string;date:string;location:string;capacity:number|null;status:FreeCamp['status']}>):Promise<void> => {const token=authTokenOrThrow();await apiFetch(`/api/free-camps/${id}/`,{method:'PATCH',authToken:token,body:JSON.stringify(payload)});};
+export const deleteFreeCamp = async (id:string):Promise<void> => {const token=authTokenOrThrow();await apiFetch(`/api/free-camps/${id}/`,{method:'DELETE',authToken:token});};
 export const createCampRoom = async (campId:string,payload:{departmentId:string;roomNumber:string;capacity?:number}):Promise<string> => {const token=authTokenOrThrow();const row=await apiFetch<{id:string}>(`/api/free-camps/${campId}/rooms/`,{method:'POST',authToken:token,body:JSON.stringify(payload)});return row.id;};
-export const updateCampRoom = async (id:string,payload:Partial<{roomNumber:string;capacity:number|null;isActive:boolean}>):Promise<void> => {const token=authTokenOrThrow();await apiFetch(`/api/free-camp-rooms/${id}/`,{method:'PATCH',authToken:token,body:JSON.stringify(payload)});};
+export const updateCampRoom = async (id:string,payload:Partial<{departmentId:string;roomNumber:string;capacity:number|null;isActive:boolean}>):Promise<void> => {const token=authTokenOrThrow();await apiFetch(`/api/free-camp-rooms/${id}/`,{method:'PATCH',authToken:token,body:JSON.stringify(payload)});};
 export const lookupPatientsByPhone = async(phone:string):Promise<PatientLookupResult[]>=>{const token=authTokenOrThrow();return apiFetch(`/api/registrations/patient-lookup/?phone=${encodeURIComponent(phone)}`,{method:'GET',authToken:token});};
 export const recordReceiptPrint = async(id:string):Promise<void>=>{const token=authTokenOrThrow();await apiFetch(`/api/registrations/${id}/receipt-print/`,{method:'POST',authToken:token});};
 
