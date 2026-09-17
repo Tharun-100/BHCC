@@ -15,3 +15,17 @@ body {
 .bg-soft-gradient {
   background: linear-gradient(135deg, #f0f9ff 0%, #ffffff 100%);
 }
+@media screen {
+  .print-only { display: none; }
+}
+
+@media print {
+  body * { visibility: hidden; }
+  .print-only, .print-only * { visibility: visible; }
+  .print-only { display: block; position: absolute; inset: 0; padding: 24px; color: #000; background: #fff; }
+  .receipt-sheet { max-width: 420px; margin: 0 auto; font-family: Arial, sans-serif; }
+  .receipt-sheet h1 { font-size: 20px; font-weight: 700; text-align: center; }
+  .receipt-sheet h2 { margin: 8px 0 20px; font-size: 16px; text-align: center; }
+  .receipt-sheet dl { display: grid; grid-template-columns: 140px 1fr; gap: 10px; border-top: 1px solid #000; padding-top: 16px; }
+  .receipt-sheet dt { font-weight: 700; }
+}

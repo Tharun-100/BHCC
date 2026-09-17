@@ -12,7 +12,7 @@ from django.contrib.auth.models import User
 from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.db.models.deletion import ProtectedError
-from django.db.models import Q, Sum
+from django.db.models import Count, Q, Sum
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.encoding import force_bytes, force_str
@@ -32,7 +32,7 @@ from .email_service import (
     send_staff_login_otp,
     send_verification_email,
 )
-from .models import Appointment, CampRegistration, ConsentRecord, Department, DoctorAvailability, EmailOTP, Feedback, FreeCamp, LabRegistration, PayrollRecord, UserProfile, UserRole, allocate_patient_id
+from .models import Appointment, CampDepartmentRoom, CampRegistration, ConsentRecord, Department, DoctorAvailability, EmailOTP, Feedback, FreeCamp, LabRegistration, PayrollRecord, UserProfile, UserRole, allocate_patient_id
 from .operational_views import client_ip, record_admin_action
 from .permissions import IsAdmin, IsCounter
 from .serializers import (
@@ -429,8 +429,30 @@ def auth_register_patient(request):
     except ValidationError as exc:
         return Response({"detail": " ".join(exc.messages)}, status=status.HTTP_400_BAD_REQUEST)
 
-    user = User.objects.create_user(username=email, email=email, password=password, first_name=name, is_active=False)
-    profile = UserProfile.objects.create(user=user, role=UserRole.PATIENT, name=name, **profile_data)
+    normalized_phone = "".join(ch for ch in profile_data["phone_no"] if ch.isdigit())[-10:]
+    normalized_name = " ".join(name.casefold().split())
+    existing_profile = UserProfile.objects.filter(role=UserRole.PATIENT, phone_no__endswith=normalized_phone).select_related("user").first()
+    if existing_profile and " ".join(existing_profile.name.casefold().split()) != normalized_name:
+        return Response({"detail": "This mobile number is already associated with another patient. Please ask the clinic counter to link the correct patient record."}, status=status.HTTP_409_CONFLICT)
+    if existing_profile and existing_profile.user.has_usable_password():
+        return Response({"detail": "A patient account already exists for this mobile number. Please sign in or reset the password."}, status=status.HTTP_409_CONFLICT)
+
+    if existing_profile:
+        user = existing_profile.user
+        user.username = email
+        user.email = email
+        user.first_name = name
+        user.is_active = False
+        user.set_password(password)
+        user.save()
+        profile = existing_profile
+        for field, value in profile_data.items():
+            setattr(profile, field, value)
+        profile.name = name
+        profile.save()
+    else:
+        user = User.objects.create_user(username=email, email=email, password=password, first_name=name, is_active=False)
+        profile = UserProfile.objects.create(user=user, role=UserRole.PATIENT, name=name, **profile_data)
     _record_policy_consents(request, user)
     allocate_patient_id(profile)
     _send_patient_verification(user, profile)
@@ -902,7 +924,7 @@ def feedback(request):
 @permission_classes([IsAuthenticated, IsCounter])
 def registrations(request):
     if request.method == "GET":
-        rows = LabRegistration.objects.order_by("-created_at")[:200]
+        rows = LabRegistration.objects.select_related("patient__profile", "department", "camp_registration__camp", "camp_registration__room").order_by("-created_at")[:200]
         return Response(LabRegistrationSerializer(rows, many=True).data)
 
     name = (request.data.get("name") or "").strip()
@@ -918,7 +940,7 @@ def registrations(request):
         today = timezone.localdate()
         camp = None
         if is_free_camp:
-            camp = FreeCamp.objects.select_for_update().filter(pk=request.data.get("campId"), is_active=True, date__gte=today).first()
+            camp = FreeCamp.objects.select_for_update().filter(pk=request.data.get("campId"), is_active=True, status=FreeCamp.Status.OPEN, date__gte=today).first()
             if not camp:
                 return Response({"detail": "Select an active free camp."}, status=status.HTTP_400_BAD_REQUEST)
             if not camp.departments.filter(pk=department.pk).exists():
@@ -926,7 +948,25 @@ def registrations(request):
             if camp.capacity and camp.registrations.count() >= camp.capacity:
                 return Response({"detail": "This camp has reached its registration capacity."}, status=status.HTTP_409_CONFLICT)
 
-        profile = UserProfile.objects.select_for_update().filter(phone_no=phone_no, role=UserRole.PATIENT).select_related("user").first()
+            rooms = CampDepartmentRoom.objects.select_for_update().filter(camp=camp, department=department, is_active=True).annotate(patient_count=Count("registrations")).order_by("patient_count", "room_number")
+            requested_room_id = request.data.get("roomId")
+            if requested_room_id:
+                rooms = rooms.filter(pk=requested_room_id)
+            room = next((candidate for candidate in rooms if not candidate.capacity or candidate.patient_count < candidate.capacity), None)
+            if not room:
+                return Response({"detail": "No available room is configured for this camp and department."}, status=status.HTTP_409_CONFLICT)
+
+        matching_profiles = list(UserProfile.objects.select_for_update().filter(phone_no=phone_no, role=UserRole.PATIENT).select_related("user"))
+        existing_patient_id = request.data.get("existingPatientId")
+        create_separate_patient = bool(request.data.get("createSeparatePatient", False))
+        profile = next((item for item in matching_profiles if str(item.user_id) == str(existing_patient_id)), None) if existing_patient_id else None
+        normalized_name = " ".join(name.casefold().split())
+        if not profile:
+            exact_names = [item for item in matching_profiles if " ".join(item.name.casefold().split()) == normalized_name]
+            if len(exact_names) == 1:
+                profile = exact_names[0]
+            elif matching_profiles and not create_separate_patient:
+                return Response({"detail": "This mobile number already belongs to an existing patient. Confirm the correct patient before registering.", "matches": [{"userId": str(item.user_id), "patientId": item.patient_id, "name": item.name, "phoneNo": item.phone_no} for item in matching_profiles]}, status=status.HTTP_409_CONFLICT)
         if profile:
             patient = profile.user
             if not profile.name:
@@ -957,8 +997,18 @@ def registrations(request):
             fee=0 if is_free_camp else 150, is_free_camp=is_free_camp,
         )
         if camp:
-            CampRegistration.objects.create(camp=camp, registration=obj)
+            CampRegistration.objects.create(camp=camp, registration=obj, room=room, registered_by=request.user)
     return Response(LabRegistrationSerializer(obj).data, status=status.HTTP_201_CREATED)
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, IsCounter])
+def patient_lookup(request):
+    phone_no = "".join(ch for ch in str(request.query_params.get("phone") or "") if ch.isdigit())[-10:]
+    if len(phone_no) != 10:
+        return Response({"detail": "Enter a valid 10-digit mobile number."}, status=status.HTTP_400_BAD_REQUEST)
+    rows = UserProfile.objects.filter(phone_no=phone_no, role=UserRole.PATIENT).select_related("user").order_by("name")
+    return Response([{"userId": str(row.user_id), "patientId": row.patient_id, "name": row.name, "phoneNo": row.phone_no, "address": row.address} for row in rows])
 
 
 @api_view(["GET", "POST"])
@@ -973,22 +1023,98 @@ def free_camps(request):
         name = (request.data.get("name") or "").strip()
         camp_date = request.data.get("date")
         department_ids = request.data.get("departmentIds") or []
-        if not name or not camp_date or not department_ids:
-            return Response({"detail": "Camp name, date, and at least one department are required."}, status=status.HTTP_400_BAD_REQUEST)
+        if not name or not camp_date:
+            return Response({"detail": "Camp name and date are required."}, status=status.HTTP_400_BAD_REQUEST)
         camp = FreeCamp.objects.create(
             name=name, date=camp_date,
             location=(request.data.get("location") or "Bhaktivedanta Health Care Center").strip(),
             capacity=request.data.get("capacity") or None, created_by=request.user,
         )
-        camp.departments.set(Department.objects.filter(pk__in=department_ids))
+        if department_ids:
+            camp.departments.set(Department.objects.filter(pk__in=department_ids))
         return Response({"id": str(camp.id)}, status=status.HTTP_201_CREATED)
-    rows = FreeCamp.objects.prefetch_related("departments").order_by("-date")
+    rows = FreeCamp.objects.prefetch_related("departments", "rooms__department").order_by("-date")
+    if role == UserRole.COUNTER:
+        rows = rows.filter(is_active=True, status=FreeCamp.Status.OPEN)
     return Response([{
         "id": str(row.id), "name": row.name, "date": row.date, "location": row.location,
-        "capacity": row.capacity, "isActive": row.is_active,
+        "capacity": row.capacity, "isActive": row.is_active, "status": row.status,
         "registrationCount": row.registrations.count(),
         "departments": DepartmentSerializer(row.departments.all(), many=True).data,
+        "rooms": [{"id": str(room.id), "departmentId": str(room.department_id), "departmentName": room.department.name, "roomNumber": room.room_number, "capacity": room.capacity, "isActive": room.is_active, "registrationCount": room.registrations.count()} for room in row.rooms.all()],
     } for row in rows])
+
+
+@api_view(["PATCH"])
+@permission_classes([IsAuthenticated, IsAdmin])
+def free_camp_detail(request, pk: int):
+    camp = get_object_or_404(FreeCamp, pk=pk)
+    for field in ("name", "location"):
+        if field in request.data:
+            setattr(camp, field, str(request.data[field]).strip())
+    if "date" in request.data:
+        camp.date = request.data["date"]
+    if "capacity" in request.data:
+        camp.capacity = request.data["capacity"] or None
+    if "status" in request.data:
+        if request.data["status"] not in {value for value, _ in FreeCamp.Status.choices}:
+            return Response({"detail": "Invalid camp status."}, status=status.HTTP_400_BAD_REQUEST)
+        camp.status = request.data["status"]
+        camp.is_active = camp.status in {FreeCamp.Status.DRAFT, FreeCamp.Status.OPEN}
+    camp.save()
+    return Response({"ok": True})
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def camp_rooms(request, camp_id: int):
+    role = getattr(getattr(request.user, "profile", None), "role", None)
+    if role not in {UserRole.ADMIN, UserRole.COUNTER}:
+        return Response({"detail": "Forbidden."}, status=status.HTTP_403_FORBIDDEN)
+    camp = get_object_or_404(FreeCamp, pk=camp_id)
+    if request.method == "POST":
+        if role != UserRole.ADMIN:
+            return Response({"detail": "Only administrators can configure camp rooms."}, status=status.HTTP_403_FORBIDDEN)
+        department = get_object_or_404(Department, pk=request.data.get("departmentId"))
+        room_number = str(request.data.get("roomNumber") or "").strip()
+        if not room_number:
+            return Response({"detail": "Room number is required."}, status=status.HTTP_400_BAD_REQUEST)
+        room, created = CampDepartmentRoom.objects.get_or_create(camp=camp, department=department, room_number=room_number, defaults={"capacity": request.data.get("capacity") or None})
+        if not created:
+            return Response({"detail": "This room is already mapped to the department for this camp."}, status=status.HTTP_409_CONFLICT)
+        camp.departments.add(department)
+        return Response({"id": str(room.id)}, status=status.HTTP_201_CREATED)
+    rows = camp.rooms.select_related("department").annotate(registration_count=Count("registrations"))
+    return Response([{"id": str(row.id), "departmentId": str(row.department_id), "departmentName": row.department.name, "roomNumber": row.room_number, "capacity": row.capacity, "isActive": row.is_active, "registrationCount": row.registration_count} for row in rows])
+
+
+@api_view(["PATCH", "DELETE"])
+@permission_classes([IsAuthenticated, IsAdmin])
+def camp_room_detail(request, pk: int):
+    room = get_object_or_404(CampDepartmentRoom, pk=pk)
+    if request.method == "DELETE":
+        if room.registrations.exists():
+            return Response({"detail": "A room with registered patients cannot be deleted. Close it instead."}, status=status.HTTP_409_CONFLICT)
+        room.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+    if "roomNumber" in request.data:
+        room.room_number = str(request.data["roomNumber"]).strip()
+    if "capacity" in request.data:
+        room.capacity = request.data["capacity"] or None
+    if "isActive" in request.data:
+        room.is_active = bool(request.data["isActive"])
+    room.save()
+    return Response({"ok": True})
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated, IsCounter])
+def registration_receipt_printed(request, pk: int):
+    registration = get_object_or_404(LabRegistration, pk=pk, is_free_camp=True)
+    camp_registration = get_object_or_404(CampRegistration, registration=registration)
+    camp_registration.receipt_print_count += 1
+    camp_registration.save(update_fields=["receipt_print_count"])
+    return Response({"ok": True, "printCount": camp_registration.receipt_print_count})
 
 
 @api_view(["GET", "POST"])

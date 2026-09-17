@@ -176,6 +176,10 @@ export interface LabRegistration {
   departmentName?: string | null;
   tokenNumber: string;
   isFreeCamp: boolean;
+  campId?: string | null;
+  campName?: string | null;
+  roomId?: string | null;
+  roomNumber?: string | null;
   time: string;
   fee: number;
   createdAt: string;
@@ -204,6 +208,26 @@ export interface FreeCamp {
   location: string;
   capacity?: number | null;
   isActive: boolean;
+  status: 'DRAFT' | 'OPEN' | 'CLOSED' | 'CANCELLED';
   registrationCount: number;
   departments: Department[];
+  rooms: CampRoom[];
+}
+
+export interface CampRoom {
+  id: string;
+  departmentId: string;
+  departmentName: string;
+  roomNumber: string;
+  capacity?: number | null;
+  isActive: boolean;
+  registrationCount: number;
+}
+
+export interface PatientLookupResult {
+  userId: string;
+  patientId: string;
+  name: string;
+  phoneNo: string;
+  address: string;
 }

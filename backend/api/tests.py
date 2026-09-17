@@ -15,7 +15,7 @@ from .email_service import (
     send_contact_notification,
     send_staff_login_otp,
 )
-from .models import Appointment, AttendanceAuditLog, AttendanceRecord, Department, LabRegistration, PayrollRecord, Prescription, UserProfile, UserRole, allocate_patient_id
+from .models import Appointment, AttendanceAuditLog, AttendanceRecord, CampDepartmentRoom, CampRegistration, Department, FreeCamp, LabRegistration, PayrollRecord, Prescription, UserProfile, UserRole, allocate_patient_id
 
 
 class ClinicOperationsTests(TestCase):
@@ -55,6 +55,60 @@ class ClinicOperationsTests(TestCase):
         row.refresh_from_db()
         self.assertEqual(row.status, PayrollRecord.Status.PAID)
         self.assertEqual(row.confirmed_by, self.admin)
+
+    def test_admin_maps_multiple_rooms_and_counter_receipt_has_minimal_fields(self):
+        admin_client = APIClient(); admin_client.force_authenticate(self.admin)
+        response = admin_client.post("/api/free-camps/", {"name":"Community Camp", "date":(date.today()+timedelta(days=1)).isoformat()}, format="json")
+        self.assertEqual(response.status_code, 201)
+        camp_id = response.data["id"]
+        for room_number in ("101", "102"):
+            response = admin_client.post(f"/api/free-camps/{camp_id}/rooms/", {"departmentId":str(self.department.id), "roomNumber":room_number, "capacity":10}, format="json")
+            self.assertEqual(response.status_code, 201)
+        self.assertEqual(CampDepartmentRoom.objects.filter(camp_id=camp_id).count(), 2)
+        self.assertEqual(admin_client.patch(f"/api/free-camps/{camp_id}/", {"status":"OPEN"}, format="json").status_code, 200)
+
+        counter_client = APIClient(); counter_client.force_authenticate(self.counter)
+        response = counter_client.post("/api/registrations/", {"name":"Camp Patient", "phoneNo":"9903554605", "address":"Newtown", "departmentId":str(self.department.id), "campId":camp_id, "isFreeCamp":True}, format="json")
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["roomNumber"], "101")
+        self.assertEqual(set(["name", "phoneNo", "patientId", "departmentName", "roomNumber", "tokenNumber"]) - set(response.data), set())
+        self.assertNotIn("doctorName", response.data)
+        camp_registration = CampRegistration.objects.get(registration_id=response.data["id"])
+        self.assertEqual(camp_registration.registered_by, self.counter)
+        self.assertEqual(counter_client.post(f"/api/registrations/{response.data['id']}/receipt-print/").status_code, 200)
+        camp_registration.refresh_from_db(); self.assertEqual(camp_registration.receipt_print_count, 1)
+
+    def test_counter_cannot_create_camp_rooms(self):
+        camp = FreeCamp.objects.create(name="Admin Managed", date=date.today()+timedelta(days=1), created_by=self.admin)
+        client = APIClient(); client.force_authenticate(self.counter)
+        response = client.post(f"/api/free-camps/{camp.id}/rooms/", {"departmentId":str(self.department.id), "roomNumber":"201"}, format="json")
+        self.assertEqual(response.status_code, 403)
+
+    @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+    def test_online_registration_reuses_counter_patient_id(self):
+        counter_client = APIClient(); counter_client.force_authenticate(self.counter)
+        created = counter_client.post("/api/registrations/", {"name":"Linked Patient", "phoneNo":"9903554606", "nativePlace":"Kolkata", "departmentId":str(self.department.id)}, format="json")
+        self.assertEqual(created.status_code, 201)
+        patient_id = created.data["patientId"]
+        response = APIClient().post("/api/auth/register-patient/", {
+            "name":"Linked Patient", "email":"linked@example.com", "password":"Linked-safe-password-42",
+            "address":"Newtown", "phoneNo":"9903554606", "profession":"Teacher", "annualIncomeRange":"1-5 Lakhs",
+            "religion":"Hindu", "acceptPolicies":True,
+        }, format="json")
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(UserProfile.objects.get(user__username="linked@example.com").patient_id, patient_id)
+        self.assertEqual(UserProfile.objects.filter(phone_no="9903554606").count(), 1)
+
+    def test_shared_mobile_can_create_separate_patient_only_when_confirmed(self):
+        first = User.objects.create_user(username="family-one")
+        UserProfile.objects.create(user=first, role=UserRole.PATIENT, name="Family One", phone_no="9903554607", patient_id="BHCC900000001")
+        client = APIClient(); client.force_authenticate(self.counter)
+        payload = {"name":"Family Two", "phoneNo":"9903554607", "nativePlace":"Kolkata", "departmentId":str(self.department.id)}
+        self.assertEqual(client.post("/api/registrations/", payload, format="json").status_code, 409)
+        payload["createSeparatePatient"] = True
+        response = client.post("/api/registrations/", payload, format="json")
+        self.assertEqual(response.status_code, 201)
+        self.assertNotEqual(response.data["patientId"], "BHCC900000001")
 
 
 @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend", DEFAULT_FROM_EMAIL="Bhaktivedanta Healthcare <noreply@bhaktivedantahealthcare.tech>", SUPPORT_EMAIL="support@bhaktivedantahealthcare.tech", FRONTEND_URL="https://example.test")

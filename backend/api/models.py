@@ -149,19 +149,42 @@ class LabRegistration(models.Model):
 
 
 class FreeCamp(models.Model):
+    class Status(models.TextChoices):
+        DRAFT = "DRAFT", "Draft"
+        OPEN = "OPEN", "Open for registration"
+        CLOSED = "CLOSED", "Closed"
+        CANCELLED = "CANCELLED", "Cancelled"
+
     name = models.CharField(max_length=160)
     date = models.DateField()
     location = models.CharField(max_length=200, default="Bhaktivedanta Health Care Center")
     departments = models.ManyToManyField(Department, related_name="free_camps")
     capacity = models.PositiveIntegerField(null=True, blank=True)
     is_active = models.BooleanField(default=True)
+    status = models.CharField(max_length=12, choices=Status.choices, default=Status.DRAFT)
     created_by = models.ForeignKey(User, on_delete=models.PROTECT, related_name="created_free_camps")
     created_at = models.DateTimeField(auto_now_add=True)
+
+
+class CampDepartmentRoom(models.Model):
+    camp = models.ForeignKey(FreeCamp, on_delete=models.CASCADE, related_name="rooms")
+    department = models.ForeignKey(Department, on_delete=models.PROTECT, related_name="camp_rooms")
+    room_number = models.CharField(max_length=40)
+    capacity = models.PositiveIntegerField(null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["camp", "department", "room_number"], name="unique_camp_department_room")]
+        ordering = ["department__name", "room_number"]
 
 
 class CampRegistration(models.Model):
     camp = models.ForeignKey(FreeCamp, on_delete=models.PROTECT, related_name="registrations")
     registration = models.OneToOneField(LabRegistration, on_delete=models.PROTECT, related_name="camp_registration")
+    room = models.ForeignKey(CampDepartmentRoom, on_delete=models.PROTECT, null=True, blank=True, related_name="registrations")
+    registered_by = models.ForeignKey(User, on_delete=models.PROTECT, null=True, blank=True, related_name="camp_patient_registrations")
+    receipt_print_count = models.PositiveIntegerField(default=0)
     attended = models.BooleanField(default=False)
     consultation_completed = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
