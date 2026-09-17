@@ -3,7 +3,7 @@ from __future__ import annotations
 from django.contrib.auth.models import User
 from rest_framework import serializers
 
-from .models import Appointment, Department, DoctorAvailability, Feedback, LabRegistration, UserProfile, UserRole
+from .models import Appointment, Department, DoctorAvailability, Feedback, LabRegistration, PayrollRecord, UserProfile, UserRole
 
 
 class UserOutSerializer(serializers.Serializer):
@@ -65,6 +65,7 @@ def user_to_out(user: User) -> dict:
     if profile:
         data["patientProfile"] = {
             "address": profile.address,
+            "nativePlace": profile.native_place,
             "phoneNo": profile.phone_no,
             "profession": profile.profession,
             "isMarried": profile.is_married,
@@ -114,10 +115,11 @@ class DepartmentSerializer(serializers.ModelSerializer):
     icon = serializers.CharField(required=False, allow_blank=True, default="")
     description = serializers.CharField(required=False, allow_blank=True, default="")
     baseFee = serializers.IntegerField(source="base_fee", required=False, min_value=0, default=0)
+    tokenPrefix = serializers.CharField(source="token_prefix", required=False, allow_blank=True, default="")
 
     class Meta:
         model = Department
-        fields = ["id", "name", "icon", "description", "baseFee"]
+        fields = ["id", "name", "icon", "description", "baseFee", "location", "tokenPrefix"]
 
 
 class AppointmentSerializer(serializers.ModelSerializer):
@@ -160,10 +162,17 @@ class LabRegistrationSerializer(serializers.ModelSerializer):
     id = serializers.CharField(source="pk", read_only=True)
     time = serializers.SerializerMethodField()
     createdAt = serializers.DateTimeField(source="created_at", read_only=True)
+    phoneNo = serializers.CharField(source="phone_no", required=False)
+    nativePlace = serializers.CharField(source="native_place", required=False)
+    patientId = serializers.CharField(source="patient.profile.patient_id", read_only=True, allow_null=True)
+    departmentId = serializers.CharField(source="department_id", read_only=True, allow_null=True)
+    departmentName = serializers.CharField(source="department.name", read_only=True, allow_null=True)
+    tokenNumber = serializers.CharField(source="token_number", read_only=True)
+    isFreeCamp = serializers.BooleanField(source="is_free_camp", read_only=True)
 
     class Meta:
         model = LabRegistration
-        fields = ["id", "name", "age", "fee", "time", "createdAt"]
+        fields = ["id", "name", "age", "phoneNo", "address", "nativePlace", "patientId", "departmentId", "departmentName", "tokenNumber", "isFreeCamp", "fee", "time", "createdAt"]
 
     def get_time(self, obj: LabRegistration) -> str:
         return obj.created_at.astimezone().strftime("%I:%M %p")
@@ -173,3 +182,18 @@ class AvailabilitySerializer(serializers.Serializer):
     doctorId = serializers.CharField()
     date = serializers.DateField()
     slots = serializers.ListField(child=serializers.CharField())
+
+
+class PayrollRecordSerializer(serializers.ModelSerializer):
+    id = serializers.CharField(source="pk", read_only=True)
+    employeeId = serializers.CharField(source="employee_id", read_only=True)
+    employeeName = serializers.CharField(source="employee.profile.name", read_only=True)
+    employeeRole = serializers.CharField(source="employee.profile.role", read_only=True)
+    paymentDate = serializers.DateField(source="payment_date", allow_null=True, required=False)
+    paymentMethod = serializers.CharField(source="payment_method", allow_blank=True, required=False)
+    confirmedBy = serializers.CharField(source="confirmed_by.profile.name", read_only=True, allow_null=True)
+    confirmedAt = serializers.DateTimeField(source="confirmed_at", read_only=True, allow_null=True)
+
+    class Meta:
+        model = PayrollRecord
+        fields = ["id", "employeeId", "employeeName", "employeeRole", "month", "amount", "status", "paymentDate", "paymentMethod", "reference", "remarks", "confirmedBy", "confirmedAt"]

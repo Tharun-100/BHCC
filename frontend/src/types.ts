@@ -137,6 +137,8 @@ export interface Department {
   icon: string;
   description: string;
   baseFee: number;
+  location: string;
+  tokenPrefix: string;
 }
 
 export interface Appointment {
@@ -149,7 +151,7 @@ export interface Appointment {
   date: string; // Format: YYYY-MM-DD
   time: string; // Format: HH:MM
   fee: number;
-  status: 'Upcoming' | 'Completed' | 'Cancelled';
+  status: 'Upcoming' | 'CheckedIn' | 'InConsultation' | 'Completed' | 'Cancelled' | 'NoShow' | 'Rescheduled';
   paymentId: string;
   paymentStatus?: string;
 }
@@ -165,8 +167,43 @@ export interface Feedback {
 export interface LabRegistration {
   id: string;
   name: string;
-  age: number;
+  age?: number | null;
+  phoneNo: string;
+  address: string;
+  nativePlace: string;
+  patientId?: string | null;
+  departmentId?: string | null;
+  departmentName?: string | null;
+  tokenNumber: string;
+  isFreeCamp: boolean;
   time: string;
   fee: number;
   createdAt: string;
+}
+
+export interface PayrollRecord {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  employeeRole: string;
+  month: string;
+  amount: number;
+  status: 'PENDING' | 'PAID';
+  paymentDate?: string | null;
+  paymentMethod?: string;
+  reference?: string;
+  remarks?: string;
+  confirmedBy?: string | null;
+  confirmedAt?: string | null;
+}
+
+export interface FreeCamp {
+  id: string;
+  name: string;
+  date: string;
+  location: string;
+  capacity?: number | null;
+  isActive: boolean;
+  registrationCount: number;
+  departments: Department[];
 }

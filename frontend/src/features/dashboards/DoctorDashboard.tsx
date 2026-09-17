@@ -3,6 +3,7 @@ import React from 'react';
 import { User, Appointment, WeekDayName } from '../../types';
 import { Users, Calendar, DollarSign, CheckCircle, Clock, TrendingUp, MapPin } from 'lucide-react';
 import { listDoctorAppointments } from '../../services/clinicService';
+import Link from 'next/link';
 
 const formatDayWindows = (windows?: Array<{ start: string; end: string }>) => {
   if (!windows || windows.length === 0) return 'Off';
@@ -36,9 +37,12 @@ const DoctorDashboard: React.FC<{ user: User }> = ({ user }) => {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-      <div className="mb-10">
+      <div className="mb-10 flex flex-wrap items-start justify-between gap-4">
+        <div>
         <h1 className="text-3xl font-extrabold text-gray-900">Welcome, {user.name}</h1>
         <p className="text-gray-500">Managing physical consultations at Bhaktivedanta.</p>
+        </div>
+        <Link href="/dashboard/payroll" className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 font-bold text-sky-700">My Payroll</Link>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">

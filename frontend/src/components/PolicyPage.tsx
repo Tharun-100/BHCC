@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { CLINIC_ADDRESS, CLINIC_EMAIL, CLINIC_NAME } from '@/constants';
+import { CLINIC_ADDRESS, CLINIC_EMAIL, CLINIC_NAME, CLINIC_PHONE } from '@/constants';
 
 export default function PolicyPage({title, summary, children}: {title: string; summary: string; children: React.ReactNode}) {
   return (
@@ -19,6 +19,7 @@ export default function PolicyPage({title, summary, children}: {title: string; s
         <p>For questions about this policy, appointments or payments, contact {CLINIC_NAME}:</p>
         <ul>
           <li>Email: <a href={`mailto:${CLINIC_EMAIL}`}>{CLINIC_EMAIL}</a></li>
+          <li>Phone: <a href={`tel:${CLINIC_PHONE.replace(/\s/g, '')}`}>{CLINIC_PHONE}</a></li>
           <li>Address: {CLINIC_ADDRESS}</li>
         </ul>
         <p><Link href="/contact">Open the contact page</Link></p>

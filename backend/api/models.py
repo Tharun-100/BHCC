@@ -3,6 +3,8 @@ from __future__ import annotations
 from django.contrib.auth.models import User
 from django.db import models
 from django.db import transaction
+from django.db.models import Q
+from django.utils import timezone
 
 
 class UserRole(models.TextChoices):
@@ -21,6 +23,7 @@ class UserProfile(models.Model):
     avatar_data_url = models.TextField(blank=True, default="")
 
     address = models.TextField(blank=True, default="")
+    native_place = models.CharField(max_length=160, blank=True, default="")
     phone_no = models.CharField(max_length=20, blank=True, default="")
     profession = models.CharField(max_length=120, blank=True, default="")
     staff_type = models.CharField(max_length=80, blank=True, default="")
@@ -62,6 +65,8 @@ class Department(models.Model):
     icon = models.CharField(max_length=80, blank=True, default="")
     description = models.TextField(blank=True, default="")
     base_fee = models.PositiveIntegerField(default=0)
+    location = models.CharField(max_length=160, blank=True, default="")
+    token_prefix = models.CharField(max_length=8, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -71,9 +76,13 @@ class Department(models.Model):
 
 class Appointment(models.Model):
     class Status(models.TextChoices):
-        UPCOMING = "Upcoming"
+        UPCOMING = "Upcoming", "Booked"
+        CHECKED_IN = "CheckedIn", "Checked in"
+        IN_CONSULTATION = "InConsultation", "In consultation"
         COMPLETED = "Completed"
         CANCELLED = "Cancelled"
+        NO_SHOW = "NoShow", "Not attended"
+        RESCHEDULED = "Rescheduled", "Rescheduled"
 
     patient = models.ForeignKey(User, on_delete=models.CASCADE, related_name="patient_appointments")
     doctor = models.ForeignKey(User, on_delete=models.CASCADE, related_name="doctor_appointments")
@@ -98,6 +107,15 @@ class Appointment(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["doctor", "date", "time"],
+                condition=~Q(status__in=["Cancelled", "NoShow", "Rescheduled"]),
+                name="unique_active_doctor_slot",
+            )
+        ]
+
 
 class Feedback(models.Model):
     patient = models.ForeignKey(User, on_delete=models.CASCADE, related_name="feedback_entries")
@@ -111,9 +129,65 @@ class Feedback(models.Model):
 
 class LabRegistration(models.Model):
     name = models.CharField(max_length=120)
-    age = models.PositiveIntegerField()
-    fee = models.PositiveIntegerField(default=200)
+    age = models.PositiveIntegerField(null=True, blank=True)
+    phone_no = models.CharField(max_length=20, blank=True, default="")
+    address = models.TextField(blank=True, default="")
+    native_place = models.CharField(max_length=160, blank=True, default="")
+    patient = models.ForeignKey(User, on_delete=models.PROTECT, null=True, blank=True, related_name="counter_registrations")
+    department = models.ForeignKey(Department, on_delete=models.PROTECT, null=True, blank=True, related_name="registrations")
+    registration_date = models.DateField(default=timezone.localdate)
+    department_sequence = models.PositiveIntegerField(null=True, blank=True)
+    token_number = models.CharField(max_length=30, blank=True, default="")
+    fee = models.PositiveIntegerField(default=150)
+    is_free_camp = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["department", "registration_date", "department_sequence"], name="unique_daily_department_token")
+        ]
+
+
+class FreeCamp(models.Model):
+    name = models.CharField(max_length=160)
+    date = models.DateField()
+    location = models.CharField(max_length=200, default="Bhaktivedanta Health Care Center")
+    departments = models.ManyToManyField(Department, related_name="free_camps")
+    capacity = models.PositiveIntegerField(null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+    created_by = models.ForeignKey(User, on_delete=models.PROTECT, related_name="created_free_camps")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+class CampRegistration(models.Model):
+    camp = models.ForeignKey(FreeCamp, on_delete=models.PROTECT, related_name="registrations")
+    registration = models.OneToOneField(LabRegistration, on_delete=models.PROTECT, related_name="camp_registration")
+    attended = models.BooleanField(default=False)
+    consultation_completed = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+class PayrollRecord(models.Model):
+    class Status(models.TextChoices):
+        PENDING = "PENDING", "Pending"
+        PAID = "PAID", "Paid"
+
+    employee = models.ForeignKey(User, on_delete=models.PROTECT, related_name="payroll_records")
+    month = models.DateField(help_text="First day of the payroll month")
+    amount = models.PositiveIntegerField()
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
+    payment_date = models.DateField(null=True, blank=True)
+    payment_method = models.CharField(max_length=40, blank=True, default="")
+    reference = models.CharField(max_length=120, blank=True, default="")
+    remarks = models.TextField(blank=True, default="")
+    confirmed_by = models.ForeignKey(User, on_delete=models.PROTECT, null=True, blank=True, related_name="confirmed_payroll_records")
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["employee", "month"], name="unique_employee_payroll_month")]
+        ordering = ["-month", "employee_id"]
 
 
 class DoctorAvailability(models.Model):

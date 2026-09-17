@@ -244,7 +244,7 @@ const BookAppointment: React.FC = () => {
       }
       const rows = await listDoctorAppointmentsByDate(selectedDoc.id, selectedDate);
       if (!mounted) return;
-      setBookedSlots(rows.filter((r) => r.status !== 'Cancelled').map((r) => r.time));
+      setBookedSlots(rows.filter((r) => !['Cancelled', 'NoShow', 'Rescheduled'].includes(r.status)).map((r) => r.time));
     };
 
     loadBookedSlots().catch(() => setBookedSlots([]));

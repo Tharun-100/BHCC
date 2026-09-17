@@ -10,7 +10,7 @@ from django.contrib.auth.tokens import default_token_generator
 from django.core.exceptions import ValidationError
 from django.contrib.auth.models import User
 from django.conf import settings
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models.deletion import ProtectedError
 from django.db.models import Q, Sum
 from django.shortcuts import get_object_or_404
@@ -32,13 +32,14 @@ from .email_service import (
     send_staff_login_otp,
     send_verification_email,
 )
-from .models import Appointment, ConsentRecord, Department, DoctorAvailability, EmailOTP, Feedback, LabRegistration, UserProfile, UserRole, allocate_patient_id
+from .models import Appointment, CampRegistration, ConsentRecord, Department, DoctorAvailability, EmailOTP, Feedback, FreeCamp, LabRegistration, PayrollRecord, UserProfile, UserRole, allocate_patient_id
 from .operational_views import client_ip, record_admin_action
 from .permissions import IsAdmin, IsCounter
 from .serializers import (
     AppointmentSerializer,
     DepartmentSerializer,
     LabRegistrationSerializer,
+    PayrollRecordSerializer,
     AvailabilitySerializer,
     user_to_out,
     public_doctor_to_out,
@@ -721,20 +722,30 @@ def appointments(request):
         ser.is_valid(raise_exception=True)
         doctor_id = int(ser.validated_data["doctor_id"])
         doctor = User.objects.get(pk=doctor_id)
-        obj = Appointment.objects.create(
-            patient=user,
-            doctor=doctor,
-            patient_name=ser.validated_data.get("patient_name", user_to_out(user)["name"]),
-            doctor_name=ser.validated_data.get("doctor_name", user_to_out(doctor)["name"]),
-            department=ser.validated_data.get("department", ""),
-            date=ser.validated_data["date"],
-            time=ser.validated_data["time"],
-            fee=ser.validated_data.get("fee", 0),
-            status=ser.validated_data.get("status", Appointment.Status.UPCOMING),
-            payment_id=ser.validated_data.get("payment_id", ""),
-        )
+        try:
+            with transaction.atomic():
+                obj = Appointment.objects.create(
+                    patient=user,
+                    doctor=doctor,
+                    patient_name=ser.validated_data.get("patient_name", user_to_out(user)["name"]),
+                    doctor_name=ser.validated_data.get("doctor_name", user_to_out(doctor)["name"]),
+                    department=ser.validated_data.get("department", ""),
+                    date=ser.validated_data["date"],
+                    time=ser.validated_data["time"],
+                    fee=ser.validated_data.get("fee", 0),
+                    status=Appointment.Status.UPCOMING,
+                    payment_id=ser.validated_data.get("payment_id", ""),
+                )
+        except IntegrityError:
+            return Response({"detail": "This doctor appointment slot has already been booked. Please select another time."}, status=status.HTTP_409_CONFLICT)
         schedule_appointment_confirmation(obj.id)
         return Response({"id": str(obj.id)}, status=status.HTTP_201_CREATED)
+
+    now = timezone.localtime()
+    no_show_cutoff = now - timedelta(minutes=30)
+    Appointment.objects.filter(status=Appointment.Status.UPCOMING).filter(
+        Q(date__lt=no_show_cutoff.date()) | Q(date=no_show_cutoff.date(), time__lt=no_show_cutoff.strftime("%H:%M"))
+    ).update(status=Appointment.Status.NO_SHOW, updated_at=timezone.now())
 
     doctor_id = request.query_params.get("doctor_id")
     patient_id = request.query_params.get("patient_id")
@@ -895,12 +906,138 @@ def registrations(request):
         return Response(LabRegistrationSerializer(rows, many=True).data)
 
     name = (request.data.get("name") or "").strip()
-    age = int(request.data.get("age") or 0)
-    fee = int(request.data.get("fee") or 200)
-    if not name or age <= 0:
-        return Response({"detail": "Valid name and age are required."}, status=status.HTTP_400_BAD_REQUEST)
-    obj = LabRegistration.objects.create(name=name, age=age, fee=fee)
-    return Response({"id": str(obj.id)}, status=status.HTTP_201_CREATED)
+    phone_no = "".join(ch for ch in str(request.data.get("phoneNo") or "") if ch.isdigit())[-10:]
+    address = (request.data.get("address") or "").strip()
+    native_place = (request.data.get("nativePlace") or "").strip()
+    department = get_object_or_404(Department, pk=request.data.get("departmentId"))
+    is_free_camp = bool(request.data.get("isFreeCamp", False))
+    if not name or len(phone_no) != 10 or (is_free_camp and not address) or (not is_free_camp and not native_place):
+        return Response({"detail": "Name, valid 10-digit phone number, department, and address/native place are required."}, status=status.HTTP_400_BAD_REQUEST)
+
+    with transaction.atomic():
+        today = timezone.localdate()
+        camp = None
+        if is_free_camp:
+            camp = FreeCamp.objects.select_for_update().filter(pk=request.data.get("campId"), is_active=True, date__gte=today).first()
+            if not camp:
+                return Response({"detail": "Select an active free camp."}, status=status.HTTP_400_BAD_REQUEST)
+            if not camp.departments.filter(pk=department.pk).exists():
+                return Response({"detail": "The selected department is not part of this camp."}, status=status.HTTP_400_BAD_REQUEST)
+            if camp.capacity and camp.registrations.count() >= camp.capacity:
+                return Response({"detail": "This camp has reached its registration capacity."}, status=status.HTTP_409_CONFLICT)
+
+        profile = UserProfile.objects.select_for_update().filter(phone_no=phone_no, role=UserRole.PATIENT).select_related("user").first()
+        if profile:
+            patient = profile.user
+            if not profile.name:
+                profile.name = name
+            if native_place:
+                profile.native_place = native_place
+            if address:
+                profile.address = address
+            profile.save(update_fields=["name", "native_place", "address"])
+        else:
+            username = f"patient-{phone_no}"
+            suffix = 1
+            while User.objects.filter(username=username).exists():
+                suffix += 1
+                username = f"patient-{phone_no}-{suffix}"
+            patient = User.objects.create_user(username=username)
+            patient.set_unusable_password()
+            patient.save(update_fields=["password"])
+            profile = UserProfile.objects.create(user=patient, role=UserRole.PATIENT, name=name, phone_no=phone_no, address=address, native_place=native_place)
+            allocate_patient_id(profile)
+
+        last = LabRegistration.objects.select_for_update().filter(department=department, registration_date=today).order_by("-department_sequence").first()
+        sequence = (last.department_sequence if last and last.department_sequence else 0) + 1
+        prefix = (department.token_prefix or "".join(word[0] for word in department.name.split())[:4] or "DEPT").upper()
+        obj = LabRegistration.objects.create(
+            name=name, phone_no=phone_no, address=address, native_place=native_place, patient=patient,
+            department=department, department_sequence=sequence, token_number=f"{prefix}-{sequence:03d}",
+            fee=0 if is_free_camp else 150, is_free_camp=is_free_camp,
+        )
+        if camp:
+            CampRegistration.objects.create(camp=camp, registration=obj)
+    return Response(LabRegistrationSerializer(obj).data, status=status.HTTP_201_CREATED)
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def free_camps(request):
+    role = getattr(getattr(request.user, "profile", None), "role", None)
+    if role not in {UserRole.ADMIN, UserRole.COUNTER}:
+        return Response({"detail": "Forbidden."}, status=status.HTTP_403_FORBIDDEN)
+    if request.method == "POST":
+        if role != UserRole.ADMIN:
+            return Response({"detail": "Only administrators can create camps."}, status=status.HTTP_403_FORBIDDEN)
+        name = (request.data.get("name") or "").strip()
+        camp_date = request.data.get("date")
+        department_ids = request.data.get("departmentIds") or []
+        if not name or not camp_date or not department_ids:
+            return Response({"detail": "Camp name, date, and at least one department are required."}, status=status.HTTP_400_BAD_REQUEST)
+        camp = FreeCamp.objects.create(
+            name=name, date=camp_date,
+            location=(request.data.get("location") or "Bhaktivedanta Health Care Center").strip(),
+            capacity=request.data.get("capacity") or None, created_by=request.user,
+        )
+        camp.departments.set(Department.objects.filter(pk__in=department_ids))
+        return Response({"id": str(camp.id)}, status=status.HTTP_201_CREATED)
+    rows = FreeCamp.objects.prefetch_related("departments").order_by("-date")
+    return Response([{
+        "id": str(row.id), "name": row.name, "date": row.date, "location": row.location,
+        "capacity": row.capacity, "isActive": row.is_active,
+        "registrationCount": row.registrations.count(),
+        "departments": DepartmentSerializer(row.departments.all(), many=True).data,
+    } for row in rows])
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def payroll(request):
+    role = getattr(getattr(request.user, "profile", None), "role", None)
+    month_text = request.query_params.get("month") or request.data.get("month") or timezone.localdate().strftime("%Y-%m")
+    try:
+        month = date_type.fromisoformat(f"{month_text[:7]}-01")
+    except ValueError:
+        return Response({"detail": "Month must use YYYY-MM format."}, status=status.HTTP_400_BAD_REQUEST)
+
+    if role == UserRole.ADMIN:
+        if request.method == "POST":
+            employees = User.objects.filter(profile__role__in=[UserRole.DOCTOR, UserRole.COUNTER, UserRole.STAFF], is_active=True).select_related("profile")
+            for employee in employees:
+                PayrollRecord.objects.get_or_create(employee=employee, month=month, defaults={"amount": employee.profile.salary or 0})
+        rows = PayrollRecord.objects.filter(month=month).select_related("employee__profile", "confirmed_by__profile")
+    elif role in {UserRole.DOCTOR, UserRole.COUNTER, UserRole.STAFF}:
+        if request.method != "GET":
+            return Response({"detail": "Forbidden."}, status=status.HTTP_403_FORBIDDEN)
+        rows = PayrollRecord.objects.filter(employee=request.user).select_related("employee__profile", "confirmed_by__profile")
+    else:
+        return Response({"detail": "Forbidden."}, status=status.HTTP_403_FORBIDDEN)
+    return Response(PayrollRecordSerializer(rows, many=True).data)
+
+
+@api_view(["PATCH"])
+@permission_classes([IsAuthenticated, IsAdmin])
+def payroll_detail(request, pk: int):
+    row = get_object_or_404(PayrollRecord.objects.select_related("employee__profile", "confirmed_by__profile"), pk=pk)
+    next_status = request.data.get("status")
+    if next_status not in {PayrollRecord.Status.PENDING, PayrollRecord.Status.PAID}:
+        return Response({"detail": "Status must be PENDING or PAID."}, status=status.HTTP_400_BAD_REQUEST)
+    row.status = next_status
+    row.payment_method = (request.data.get("paymentMethod") or "").strip()
+    row.reference = (request.data.get("reference") or "").strip()
+    row.remarks = (request.data.get("remarks") or "").strip()
+    if next_status == PayrollRecord.Status.PAID:
+        row.payment_date = request.data.get("paymentDate") or timezone.localdate()
+        row.confirmed_by = request.user
+        row.confirmed_at = timezone.now()
+    else:
+        row.payment_date = None
+        row.confirmed_by = None
+        row.confirmed_at = None
+    row.save()
+    record_admin_action(request, action="PAYROLL_STATUS_UPDATED", target_type="PayrollRecord", target_id=str(row.pk), summary=f"{row.employee.profile.name}: {row.status}")
+    return Response(PayrollRecordSerializer(row).data)
 
 
 @api_view(["POST"])

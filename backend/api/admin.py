@@ -1,12 +1,15 @@
 from django.contrib import admin
 
-from .models import AdminAuditLog, Appointment, AttendanceRecord, Consultation, ConsentRecord, DataDeletionRequest, Department, DoctorAvailability, EmailDeliveryLog, Feedback, LabRegistration, LeaveRequest, Prescription, UserProfile
+from .models import AdminAuditLog, Appointment, AttendanceRecord, CampRegistration, Consultation, ConsentRecord, DataDeletionRequest, Department, DoctorAvailability, EmailDeliveryLog, Feedback, FreeCamp, LabRegistration, LeaveRequest, PayrollRecord, Prescription, UserProfile
 
 admin.site.register(UserProfile)
 admin.site.register(Department)
 admin.site.register(Appointment)
 admin.site.register(Feedback)
 admin.site.register(LabRegistration)
+admin.site.register(FreeCamp)
+admin.site.register(CampRegistration)
+admin.site.register(PayrollRecord)
 admin.site.register(DoctorAvailability)
 admin.site.register(AttendanceRecord)
 admin.site.register(LeaveRequest)

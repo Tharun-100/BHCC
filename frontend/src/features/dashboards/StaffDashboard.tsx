@@ -11,6 +11,7 @@ const StaffDashboard: React.FC<{ user: User }> = ({ user }) => (
     </div>
 
     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+      <Link href="/dashboard/payroll" className="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-sm hover:shadow-md transition"><h2 className="text-xl font-black text-gray-900 mb-2">My Payroll</h2><p className="text-gray-500">View your monthly payout status and payment history.</p></Link>
       <Link href="/dashboard/profile" className="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-sm hover:shadow-md transition">
         <div className="w-12 h-12 bg-sky-50 text-sky-600 rounded-2xl flex items-center justify-center mb-5">
           <UserCircle size={24} />

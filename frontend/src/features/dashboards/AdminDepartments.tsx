@@ -13,6 +13,8 @@ const EMPTY_FORM = {
   icon: 'Stethoscope',
   description: '',
   baseFee: '',
+  location: '',
+  tokenPrefix: '',
 };
 
 const AdminDepartments: React.FC = () => {
@@ -61,6 +63,8 @@ const AdminDepartments: React.FC = () => {
           icon: form.icon.trim(),
           description: form.description.trim(),
           baseFee,
+          location: form.location.trim(),
+          tokenPrefix: form.tokenPrefix.trim().toUpperCase(),
         });
       } else {
         await createDepartment({
@@ -68,6 +72,8 @@ const AdminDepartments: React.FC = () => {
           icon: form.icon.trim(),
           description: form.description.trim(),
           baseFee,
+          location: form.location.trim(),
+          tokenPrefix: form.tokenPrefix.trim().toUpperCase(),
         });
       }
 
@@ -87,6 +93,8 @@ const AdminDepartments: React.FC = () => {
       icon: row.icon,
       description: row.description,
       baseFee: String(row.baseFee),
+      location: row.location || '',
+      tokenPrefix: row.tokenPrefix || '',
     });
     setError(null);
   };
@@ -140,6 +148,21 @@ const AdminDepartments: React.FC = () => {
               rows={4}
               className="w-full px-4 py-3 rounded-xl border border-gray-200"
             />
+            <input
+              type="text"
+              placeholder="Clinic room / floor"
+              value={form.location}
+              onChange={(e) => setForm((prev) => ({ ...prev, location: e.target.value }))}
+              className="w-full px-4 py-3 rounded-xl border border-gray-200"
+            />
+            <input
+              type="text"
+              maxLength={8}
+              placeholder="Token prefix, e.g. DEN"
+              value={form.tokenPrefix}
+              onChange={(e) => setForm((prev) => ({ ...prev, tokenPrefix: e.target.value }))}
+              className="w-full px-4 py-3 rounded-xl border border-gray-200"
+            />
 
             {error && <p className="text-sm text-red-600">{error}</p>}
 
@@ -177,6 +200,7 @@ const AdminDepartments: React.FC = () => {
                   <p className="text-xs text-gray-500 mb-1">Icon: {row.icon}</p>
                   <p className="text-sm text-gray-600">{row.description}</p>
                   <p className="text-sm font-bold text-sky-700 mt-1">Rs. {row.baseFee}</p>
+                  <p className="text-sm text-gray-500">Location: {row.location || 'Not assigned'} · Token: {row.tokenPrefix || 'Automatic'}</p>
                 </div>
                 <div className="flex gap-2">
                   <button onClick={() => handleEdit(row)} className="p-2 rounded-lg border border-gray-200">

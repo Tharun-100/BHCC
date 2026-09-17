@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Activity, CalendarClock, ClipboardList, ContactRound, FolderCog, IndianRupee, ShieldCheck, Stethoscope, UsersRound } from 'lucide-react';
+import { Activity, CalendarClock, ClipboardList, ContactRound, FolderCog, IndianRupee, ShieldCheck, Stethoscope, TentTree, UsersRound } from 'lucide-react';
 
 const groups = [
   {
@@ -20,12 +20,14 @@ const groups = [
       { href: '/dashboard/departments', label: 'Departments', icon: FolderCog },
       { href: '/dashboard/availability', label: 'Doctor Availability', icon: CalendarClock },
       { href: '/dashboard/attendance', label: 'Attendance & Leave', icon: Activity },
+      { href: '/dashboard/camps', label: 'Free Camps', icon: TentTree },
     ],
   },
   {
     label: 'Finance & Governance',
     links: [
       { href: '/dashboard/revenue', label: 'Revenue', icon: IndianRupee },
+      { href: '/dashboard/payroll', label: 'Monthly Payroll', icon: IndianRupee },
       { href: '/dashboard/operations', label: 'Operations & Audit', icon: ShieldCheck },
     ],
   },

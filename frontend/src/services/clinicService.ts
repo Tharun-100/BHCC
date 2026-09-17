@@ -1,6 +1,6 @@
 import { apiFetch } from '@/lib/api';
 import { getAccessToken } from '@/lib/storage';
-import { Appointment, Department, Feedback, LabRegistration, User, WeeklySchedule } from '@/types';
+import { Appointment, Department, Feedback, FreeCamp, LabRegistration, PayrollRecord, User, WeeklySchedule } from '@/types';
 
 type NewAppointmentInput = Omit<Appointment, 'id' | 'status' | 'paymentId'> & {
   status?: Appointment['status'];
@@ -190,17 +190,52 @@ export const submitFeedback = async (input: NewFeedbackInput): Promise<string> =
 export const listApprovedFeedback = async (): Promise<Feedback[]> =>
   apiFetch<Feedback[]>('/api/feedback/?approved=true', { method: 'GET' });
 
-export const createRegistration = async (name: string, age: number, fee = 200): Promise<string> => {
+export interface RegistrationInput {
+  name: string;
+  phoneNo: string;
+  address?: string;
+  nativePlace?: string;
+  departmentId: string;
+  isFreeCamp?: boolean;
+  campId?: string;
+}
+
+export const createRegistration = async (payload: RegistrationInput): Promise<LabRegistration> => {
   const token = authTokenOrThrow();
-  const created = await apiFetch<{ id: string }>('/api/registrations/', {
+  return apiFetch<LabRegistration>('/api/registrations/', {
     method: 'POST',
     authToken: token,
-    body: JSON.stringify({ name, age, fee })
+    body: JSON.stringify(payload)
   });
-  return created.id;
 };
 
 export const listRegistrations = async (): Promise<LabRegistration[]> => {
   const token = authTokenOrThrow();
   return apiFetch<LabRegistration[]>('/api/registrations/', { method: 'GET', authToken: token });
+};
+
+export const listFreeCamps = async (): Promise<FreeCamp[]> => {
+  const token = authTokenOrThrow();
+  return apiFetch<FreeCamp[]>('/api/free-camps/', { method: 'GET', authToken: token });
+};
+
+export const createFreeCamp = async (payload: {name:string; date:string; location:string; capacity?:number; departmentIds:string[]}): Promise<string> => {
+  const token = authTokenOrThrow();
+  const result = await apiFetch<{id:string}>('/api/free-camps/', {method:'POST', authToken:token, body:JSON.stringify(payload)});
+  return result.id;
+};
+
+export const listPayroll = async (month: string): Promise<PayrollRecord[]> => {
+  const token = authTokenOrThrow();
+  return apiFetch<PayrollRecord[]>(`/api/management/payroll/?month=${encodeURIComponent(month)}`, { method: 'GET', authToken: token });
+};
+
+export const generatePayroll = async (month: string): Promise<PayrollRecord[]> => {
+  const token = authTokenOrThrow();
+  return apiFetch<PayrollRecord[]>('/api/management/payroll/', { method: 'POST', authToken: token, body: JSON.stringify({ month }) });
+};
+
+export const updatePayrollStatus = async (id: string, payload: {status: 'PENDING' | 'PAID'; paymentMethod?: string; reference?: string; remarks?: string}): Promise<PayrollRecord> => {
+  const token = authTokenOrThrow();
+  return apiFetch<PayrollRecord>(`/api/management/payroll/${encodeURIComponent(id)}/`, { method: 'PATCH', authToken: token, body: JSON.stringify(payload) });
 };

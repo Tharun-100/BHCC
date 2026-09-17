@@ -1,152 +1,60 @@
+import React from 'react';
+import { Department, FreeCamp, LabRegistration, User } from '../../types';
+import { PlusCircle, Users } from 'lucide-react';
+import { createRegistration, listDepartments, listFreeCamps, listRegistrations } from '../../services/clinicService';
+import Link from 'next/link';
 
-import React, { useState } from 'react';
-import { LabRegistration, User } from '../../types';
-import { Users, DollarSign, PlusCircle, Search, Calendar, Clock } from 'lucide-react';
-import { createRegistration, listRegistrations } from '../../services/clinicService';
+const emptyForm = { name: '', phoneNo: '', address: '', nativePlace: '', departmentId: '', campId: '', isFreeCamp: false };
 
-const CounterDashboard: React.FC<{ user: User }> = ({ user }) => {
-  const [registrations, setRegistrations] = useState<LabRegistration[]>([]);
-
-  const [newName, setNewName] = useState('');
-  const [newAge, setNewAge] = useState('');
+const CounterDashboard: React.FC<{ user: User }> = () => {
+  const [registrations, setRegistrations] = React.useState<LabRegistration[]>([]);
+  const [departments, setDepartments] = React.useState<Department[]>([]);
+  const [camps, setCamps] = React.useState<FreeCamp[]>([]);
+  const [form, setForm] = React.useState(emptyForm);
+  const [message, setMessage] = React.useState('');
+  const [saving, setSaving] = React.useState(false);
 
   React.useEffect(() => {
-    listRegistrations()
-      .then((rows) => setRegistrations(rows))
-      .catch(() => setRegistrations([]));
+    Promise.all([listRegistrations(), listDepartments(), listFreeCamps()]).then(([rows, departmentRows, campRows]) => {
+      setRegistrations(rows); setDepartments(departmentRows); setCamps(campRows.filter(camp => camp.isActive));
+    }).catch(() => setMessage('Unable to load counter registration data.'));
   }, []);
 
-  const handleRegister = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newName || !newAge) return;
+  const selectedCamp = camps.find(camp => camp.id === form.campId);
+  const availableDepartments = form.isFreeCamp && selectedCamp ? selectedCamp.departments : departments;
 
-    const age = parseInt(newAge, 10);
-    const id = await createRegistration(newName.trim(), age, 200);
-    const newReg: LabRegistration = {
-      id,
-      name: newName.trim(),
-      age,
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      createdAt: new Date().toISOString(),
-      fee: 200,
-    };
-    setRegistrations([newReg, ...registrations]);
-    setNewName('');
-    setNewAge('');
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault(); setMessage(''); setSaving(true);
+    try {
+      const row = await createRegistration(form);
+      setRegistrations(previous => [row, ...previous]);
+      setForm(emptyForm);
+      setMessage(`Registered successfully. Patient ID: ${row.patientId}; token: ${row.tokenNumber}.`);
+    } catch (error: any) { setMessage(error?.message || 'Registration failed.'); }
+    finally { setSaving(false); }
   };
 
-  const totalRevenue = registrations.length * 200;
-
-  return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-      <div className="mb-10">
-        <h1 className="text-3xl font-extrabold text-gray-900">Counter Registration</h1>
-        <p className="text-gray-500">Service Lab Registration Portal</p>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
-        <div className="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-sm">
-          <div className="flex items-center justify-between mb-8">
-            <h2 className="text-xl font-bold text-gray-900 flex items-center">
-              <PlusCircle className="mr-2 text-sky-500" size={24} /> New Registration
-            </h2>
-          </div>
-          <form onSubmit={handleRegister} className="space-y-4">
-            <div>
-              <label className="block text-sm font-bold text-gray-700 mb-2">Patient Name</label>
-              <input 
-                type="text" 
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                placeholder="Enter full name"
-                className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-sky-500 outline-none"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-bold text-gray-700 mb-2">Age</label>
-              <input 
-                type="number" 
-                value={newAge}
-                onChange={(e) => setNewAge(e.target.value)}
-                placeholder="Enter age"
-                className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-sky-500 outline-none"
-              />
-            </div>
-            <div className="p-4 bg-sky-50 rounded-xl border border-sky-100 flex justify-between items-center">
-              <span className="text-sm font-bold text-sky-700">Registration Fee</span>
-              <span className="text-xl font-black text-sky-900">₹200</span>
-            </div>
-            <button 
-              type="submit"
-              className="w-full py-4 bg-sky-600 text-white rounded-xl font-bold hover:bg-sky-700 transition shadow-lg shadow-sky-100"
-            >
-              Register Patient
-            </button>
-          </form>
-        </div>
-
-        <div className="grid grid-cols-1 gap-6">
-          <div className="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-sm flex flex-col justify-center">
-            <div className="w-12 h-12 bg-sky-50 text-sky-600 rounded-2xl flex items-center justify-center mb-4">
-              <Users size={24} />
-            </div>
-            <p className="text-sm text-gray-500 font-bold mb-1">Patients Registered Today</p>
-            <p className="text-4xl font-black text-gray-900">{registrations.length}</p>
-          </div>
-          <div className="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-sm flex flex-col justify-center">
-            <div className="w-12 h-12 bg-green-50 text-green-600 rounded-2xl flex items-center justify-center mb-4">
-              <DollarSign size={24} />
-            </div>
-            <p className="text-sm text-gray-500 font-bold mb-1">Total Collection Today</p>
-            <p className="text-4xl font-black text-gray-900">₹{totalRevenue}</p>
-            <p className="text-xs text-gray-400 mt-2 italic">* Revenue details visible to Admin only in their portal.</p>
-          </div>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-[2.5rem] border border-gray-100 shadow-sm overflow-hidden">
-        <div className="px-8 py-6 border-b border-gray-100 flex items-center justify-between">
-          <h3 className="font-bold text-gray-900">Today's Registrations</h3>
-          <div className="relative">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input 
-              type="text" 
-              placeholder="Search..." 
-              className="pl-10 pr-4 py-2 bg-gray-50 border-none rounded-xl text-sm focus:ring-2 focus:ring-sky-500"
-            />
-          </div>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-8 py-4 text-xs font-bold text-gray-400 uppercase tracking-wider">Patient Name</th>
-                <th className="px-8 py-4 text-xs font-bold text-gray-400 uppercase tracking-wider">Age</th>
-                <th className="px-8 py-4 text-xs font-bold text-gray-400 uppercase tracking-wider">Time</th>
-                <th className="px-8 py-4 text-xs font-bold text-gray-400 uppercase tracking-wider">Fee</th>
-                <th className="px-8 py-4 text-xs font-bold text-gray-400 uppercase tracking-wider text-right">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {registrations.map((reg) => (
-                <tr key={reg.id} className="hover:bg-gray-50 transition">
-                  <td className="px-8 py-5 font-bold text-gray-900">{reg.name}</td>
-                  <td className="px-8 py-5 text-sm text-gray-500">{reg.age}</td>
-                  <td className="px-8 py-5 text-sm text-gray-500 flex items-center">
-                    <Clock size={14} className="mr-1 text-sky-500" /> {reg.time}
-                  </td>
-                  <td className="px-8 py-5 text-sm font-bold text-gray-900">₹{reg.fee}</td>
-                  <td className="px-8 py-5 text-right">
-                    <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-[10px] font-black uppercase">Registered</span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+  return <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+    <div className="mb-8 flex flex-wrap items-start justify-between gap-4"><div><h1 className="text-3xl font-extrabold text-gray-900">Counter Registration</h1><p className="text-gray-500">Register clinic and counter-only free-camp patients. Existing mobile numbers retain their BHCC patient ID.</p></div><Link href="/dashboard/payroll" className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 font-bold text-sky-700">My Payroll</Link></div>
+    <div className="grid gap-8 lg:grid-cols-[minmax(0,420px)_1fr]">
+      <form onSubmit={submit} className="space-y-4 rounded-3xl border border-gray-100 bg-white p-7 shadow-sm">
+        <h2 className="flex items-center text-xl font-bold"><PlusCircle className="mr-2 text-sky-600"/>New registration</h2>
+        <label className="flex items-center gap-3 rounded-xl bg-sky-50 p-4 font-bold text-sky-900"><input type="checkbox" checked={form.isFreeCamp} onChange={e => setForm({...form, isFreeCamp:e.target.checked, campId:'', departmentId:''})}/>Free camp registration</label>
+        {form.isFreeCamp && <select required value={form.campId} onChange={e=>setForm({...form,campId:e.target.value,departmentId:''})} className="w-full rounded-xl border p-3"><option value="">Select free camp</option>{camps.map(c=><option key={c.id} value={c.id}>{c.name} — {c.date}</option>)}</select>}
+        <input required placeholder="Patient name" value={form.name} onChange={e=>setForm({...form,name:e.target.value})} className="w-full rounded-xl border p-3"/>
+        <input required inputMode="numeric" pattern="[0-9]{10}" placeholder="10-digit mobile number" value={form.phoneNo} onChange={e=>setForm({...form,phoneNo:e.target.value.replace(/\D/g,'').slice(0,10)})} className="w-full rounded-xl border p-3"/>
+        {form.isFreeCamp ? <textarea required placeholder="Address" value={form.address} onChange={e=>setForm({...form,address:e.target.value})} className="w-full rounded-xl border p-3"/> : <input required placeholder="Native place" value={form.nativePlace} onChange={e=>setForm({...form,nativePlace:e.target.value})} className="w-full rounded-xl border p-3"/>}
+        <select required value={form.departmentId} onChange={e=>setForm({...form,departmentId:e.target.value})} className="w-full rounded-xl border p-3"><option value="">Select department</option>{availableDepartments.map(d=><option key={d.id} value={d.id}>{d.name}{d.location ? ` — ${d.location}` : ''}</option>)}</select>
+        <div className="rounded-xl bg-gray-50 p-4 font-bold">Registration fee: {form.isFreeCamp ? 'Free' : '₹150'}</div>
+        {message && <p className="rounded-xl bg-sky-50 p-3 text-sm text-sky-800">{message}</p>}
+        <button disabled={saving} className="w-full rounded-xl bg-sky-600 py-4 font-bold text-white disabled:opacity-60">{saving?'Registering...':'Register patient'}</button>
+      </form>
+      <div className="overflow-hidden rounded-3xl border border-gray-100 bg-white shadow-sm">
+        <div className="flex items-center gap-3 border-b p-6"><Users className="text-sky-600"/><h2 className="font-bold">Recent registrations ({registrations.length})</h2></div>
+        <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="bg-gray-50"><tr><th className="p-4">Patient</th><th className="p-4">Patient ID</th><th className="p-4">Department</th><th className="p-4">Token</th><th className="p-4">Fee</th></tr></thead><tbody>{registrations.map(row=><tr key={row.id} className="border-t"><td className="p-4 font-bold">{row.name}<div className="font-normal text-gray-500">{row.phoneNo}</div></td><td className="p-4">{row.patientId || '—'}</td><td className="p-4">{row.departmentName || '—'}</td><td className="p-4 font-bold text-sky-700">{row.tokenNumber || '—'}</td><td className="p-4">{row.isFreeCamp?'Free':`₹${row.fee}`}</td></tr>)}</tbody></table></div>
       </div>
     </div>
-  );
+  </div>;
 };
 
 export default CounterDashboard;

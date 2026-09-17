@@ -15,7 +15,46 @@ from .email_service import (
     send_contact_notification,
     send_staff_login_otp,
 )
-from .models import Appointment, AttendanceAuditLog, AttendanceRecord, Department, Prescription, UserProfile, UserRole, allocate_patient_id
+from .models import Appointment, AttendanceAuditLog, AttendanceRecord, Department, LabRegistration, PayrollRecord, Prescription, UserProfile, UserRole, allocate_patient_id
+
+
+class ClinicOperationsTests(TestCase):
+    def setUp(self):
+        self.patient = User.objects.create_user(username="operations-patient@example.com", password="safe-test-password")
+        UserProfile.objects.create(user=self.patient, role=UserRole.PATIENT, name="Patient")
+        self.doctor = User.objects.create_user(username="operations-doctor@example.com", password="safe-test-password")
+        UserProfile.objects.create(user=self.doctor, role=UserRole.DOCTOR, name="Doctor", salary=40000)
+        self.counter = User.objects.create_user(username="operations-counter@example.com", password="safe-test-password")
+        UserProfile.objects.create(user=self.counter, role=UserRole.COUNTER, name="Counter", salary=20000)
+        self.admin = User.objects.create_user(username="operations-admin@example.com", password="safe-test-password")
+        UserProfile.objects.create(user=self.admin, role=UserRole.ADMIN, name="Admin")
+        self.department = Department.objects.create(name="Dental", base_fee=500, token_prefix="DEN", location="Room 2")
+
+    def test_active_doctor_slot_cannot_be_booked_twice(self):
+        client = APIClient(); client.force_authenticate(self.patient)
+        payload = {"patientName":"Patient", "doctorId":str(self.doctor.id), "doctorName":"Doctor", "department":"Dental", "date":date.today(), "time":"10:00", "fee":500}
+        self.assertEqual(client.post("/api/appointments/", payload, format="json").status_code, 201)
+        self.assertEqual(client.post("/api/appointments/", payload, format="json").status_code, 409)
+
+    def test_counter_registration_creates_patient_id_and_daily_token(self):
+        client = APIClient(); client.force_authenticate(self.counter)
+        response = client.post("/api/registrations/", {"name":"Camp Patient", "phoneNo":"9903554604", "nativePlace":"Kolkata", "departmentId":str(self.department.id)}, format="json")
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.data["patientId"].startswith("BHCC"))
+        self.assertEqual(response.data["tokenNumber"], "DEN-001")
+        self.assertEqual(LabRegistration.objects.get().fee, 150)
+
+    def test_admin_generates_and_confirms_payroll(self):
+        client = APIClient(); client.force_authenticate(self.admin)
+        month = date.today().strftime("%Y-%m")
+        response = client.post("/api/management/payroll/", {"month":month}, format="json")
+        self.assertEqual(response.status_code, 200)
+        row = PayrollRecord.objects.get(employee=self.doctor)
+        response = client.patch(f"/api/management/payroll/{row.id}/", {"status":"PAID", "paymentMethod":"Bank transfer", "reference":"TEST-1"}, format="json")
+        self.assertEqual(response.status_code, 200)
+        row.refresh_from_db()
+        self.assertEqual(row.status, PayrollRecord.Status.PAID)
+        self.assertEqual(row.confirmed_by, self.admin)
 
 
 @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend", DEFAULT_FROM_EMAIL="Bhaktivedanta Healthcare <noreply@bhaktivedantahealthcare.tech>", SUPPORT_EMAIL="support@bhaktivedantahealthcare.tech", FRONTEND_URL="https://example.test")

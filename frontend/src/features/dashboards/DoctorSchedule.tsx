@@ -25,11 +25,11 @@ const DoctorSchedule: React.FC<{ user: User }> = ({ user }) => {
     };
   }, [user.id]);
 
-  const handleMarkAttended = async (appointmentId: string) => {
+  const handleStatus = async (appointmentId: string, status: Appointment['status']) => {
     setUpdatingAppointmentId(appointmentId);
     setError(null);
     try {
-      const updatedAppointment = await updateAppointmentStatus(appointmentId, 'Completed');
+      const updatedAppointment = await updateAppointmentStatus(appointmentId, status);
       setSchedule((current) => current.map((appointment) => appointment.id === appointmentId ? updatedAppointment : appointment));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not mark appointment as attended.');
@@ -111,16 +111,17 @@ const DoctorSchedule: React.FC<{ user: User }> = ({ user }) => {
                     </div>
 
                     <div className="flex items-center space-x-3 lg:self-center">
-                      {app.status === 'Upcoming' ? (
+                      {!['Completed', 'Cancelled', 'NoShow', 'Rescheduled'].includes(app.status) ? (
                         <>
                           <button
-                            onClick={() => handleMarkAttended(app.id)}
+                            onClick={() => handleStatus(app.id, app.status === 'Upcoming' ? 'CheckedIn' : app.status === 'CheckedIn' ? 'InConsultation' : 'Completed')}
                             disabled={updatingAppointmentId === app.id}
                             className="px-6 py-3 bg-sky-600 text-white rounded-2xl font-bold hover:bg-sky-700 transition flex items-center disabled:opacity-60"
                           >
                             {updatingAppointmentId === app.id ? <Loader2 size={18} className="mr-2 animate-spin" /> : <CheckCircle size={18} className="mr-2" />}
-                            Mark Attended
+                            {app.status === 'Upcoming' ? 'Check in' : app.status === 'CheckedIn' ? 'Start consultation' : 'Complete'}
                           </button>
+                          {app.status === 'Upcoming' && <button onClick={() => handleStatus(app.id, 'NoShow')} className="px-4 py-3 border border-red-200 text-red-700 rounded-2xl font-bold">Not attended</button>}
                           <span className="px-6 py-3 bg-gray-50 text-gray-400 rounded-2xl font-bold" title="Patient medical records are not yet stored in the system">Records unavailable</span>
                         </>
                       ) : (

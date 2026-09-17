@@ -128,8 +128,8 @@ const PatientDashboard: React.FC<{ user: User }> = ({ user }) => {
                         </span>
                       </td>
                       <td className="px-6 py-4">
-                        {app.status === 'Cancelled' ? (
-                          <span className="text-gray-500 text-sm font-bold">{app.paymentStatus || 'Cancelled'}</span>
+                        {['Cancelled', 'NoShow', 'Rescheduled'].includes(app.status) ? (
+                          <Link href={`/book?department=${encodeURIComponent(app.department)}`} className="text-sky-600 text-sm font-bold hover:underline">Book another appointment</Link>
                         ) : (
                           <span className="text-gray-400 font-bold text-sm" title="No prescription has been uploaded for this appointment">Rx unavailable</span>
                         )}
