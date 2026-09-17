@@ -1102,7 +1102,15 @@ def camp_room_detail(request, pk: int):
     if "roomNumber" in request.data:
         room.room_number = str(request.data["roomNumber"]).strip()
     if "capacity" in request.data:
-        room.capacity = request.data["capacity"] or None
+        capacity = request.data["capacity"] or None
+        if capacity is not None:
+            try:
+                capacity = int(capacity)
+            except (TypeError, ValueError):
+                return Response({"detail": "Room capacity must be a positive whole number or empty for unlimited."}, status=status.HTTP_400_BAD_REQUEST)
+            if capacity < room.registrations.count():
+                return Response({"detail": "Room capacity cannot be lower than its current registration count."}, status=status.HTTP_400_BAD_REQUEST)
+        room.capacity = capacity
     if "isActive" in request.data:
         room.is_active = bool(request.data["isActive"])
     room.save()
