@@ -52,20 +52,25 @@ const CounterDashboard: React.FC<{ user: User }> = () => {
       ['Department :', receipt.departmentName],
       ['Department Token :', receipt.tokenNumber],
     ];
-    printWindow.document.write(`<!doctype html><html><head><title>Camp receipt</title><style>
-      *{box-sizing:border-box}html,body{margin:0;padding:0;width:76mm;background:#fff;color:#000}
-      body{padding:2mm;font:11px/1.25 "Courier New",monospace}.receipt{width:72mm}
-      h1{margin:0;text-align:center;text-transform:uppercase;font-size:15px;line-height:1.15}
-      h2{margin:2mm 0;text-align:center;font-size:13px;line-height:1.2}
-      dl{display:grid;grid-template-columns:31mm 1fr;gap:1.5mm;margin:0;padding:2mm 0;border-top:1px dashed #000;border-bottom:1px dashed #000}
-      dt{font-weight:700}dd{margin:0;text-align:right;overflow-wrap:anywhere}.footer{margin:2mm 0 0;text-align:center}
-    </style></head><body><section class="receipt"><h1>Bhaktivedanta<br>Health Care Center</h1><h2>${escapeReceiptValue(receipt.campName)}</h2><dl>${rows.map(([label, value]) => `<dt>${label}</dt><dd>${escapeReceiptValue(value)}</dd>`).join('')}</dl><p class="footer">Hare Krishna!</p></section></body></html>`);
+    printWindow.document.write(`<!doctype html><html><head><meta charset="UTF-8"><title>Camp receipt</title><style>
+      *{box-sizing:border-box}html,body{margin:0;width:80mm;background:#eee;color:#000}
+      body{padding:20px;font-family:"Courier New",Courier,monospace;font-size:13px;font-weight:700}
+      .receipt{width:80mm;margin:0;padding:4mm 3mm;background:#fff}
+      .hospital-name{text-align:center;font-size:16px;line-height:18px;margin-bottom:5px}
+      .camp-name{text-align:center;font-size:14px;line-height:17px;margin-bottom:8px}
+      .line{border-top:1px dashed #000;margin:7px 0}
+      .field{display:flex;width:100%;line-height:20px}.label{flex:0 0 46%;text-align:left;white-space:nowrap}
+      .value{flex:1;min-width:0;text-align:right;overflow-wrap:anywhere}.token{margin-top:3px}
+      .footer{margin-top:8px;text-align:center;font-size:13px}
+      @media print{html,body{width:80mm;margin:0;padding:0;background:#fff}.receipt{width:80mm;margin:0;padding:4mm 3mm}}
+    </style></head><body><section class="receipt"><div class="hospital-name">BHAKTIVEDANTA<br>HEALTH CARE CENTER</div><div class="camp-name">${escapeReceiptValue(receipt.campName)}</div><div class="line"></div>${rows.map(([label, value], index) => `<div class="field${index === rows.length - 1 ? ' token' : ''}"><div class="label">${label}</div><div class="value">${escapeReceiptValue(value)}</div></div>`).join('')}<div class="line"></div><div class="footer">Hare Krishna!</div></section></body></html>`);
     printWindow.document.close();
     printWindow.addEventListener('afterprint', () => printWindow.close(), { once: true });
     window.setTimeout(() => {
-      const contentHeightMm = Math.max(45, Math.ceil(printWindow.document.documentElement.scrollHeight * 25.4 / 96) + 2);
+      const receiptElement = printWindow.document.querySelector('.receipt') as HTMLElement | null;
+      const contentHeightMm = Math.max(45, Math.ceil((receiptElement?.scrollHeight || 0) * 25.4 / 96) + 1);
       const pageStyle = printWindow.document.createElement('style');
-      pageStyle.textContent = `@page{size:76mm ${contentHeightMm}mm;margin:0}`;
+      pageStyle.textContent = `@page{size:80mm ${contentHeightMm}mm;margin:0}`;
       printWindow.document.head.appendChild(pageStyle);
       printWindow.focus();
       printWindow.print();
