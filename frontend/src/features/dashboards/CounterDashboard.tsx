@@ -5,6 +5,7 @@ import { PlusCircle, Printer, Search, Users } from 'lucide-react';
 import { createRegistration, listFreeCamps, listRegistrations, lookupPatientsByPhone, recordReceiptPrint } from '../../services/clinicService';
 
 const emptyForm = { name: '', phoneNo: '', address: '', departmentId: '', campId: '', existingPatientId: '', createSeparatePatient: false, isFreeCamp: true };
+const escapeReceiptValue = (value: unknown) => String(value ?? '').replace(/[&<>'"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[character] || character);
 
 const CounterDashboard: React.FC<{ user: User }> = () => {
   const [registrations, setRegistrations] = React.useState<LabRegistration[]>([]);
@@ -42,7 +43,33 @@ const CounterDashboard: React.FC<{ user: User }> = () => {
   };
   const printReceipt = () => {
     if (!receipt) return;
-    window.print();
+    const printWindow = window.open('', '_blank', 'width=420,height=600');
+    if (!printWindow) { setMessage('Allow pop-ups for this website to print the receipt.'); return; }
+    const rows = [
+      ['Patient Name :', receipt.name],
+      ['Mobile :', receipt.phoneNo],
+      ['Patient ID :', receipt.patientId],
+      ['Department :', receipt.departmentName],
+      ['Department Token :', receipt.tokenNumber],
+    ];
+    printWindow.document.write(`<!doctype html><html><head><title>Camp receipt</title><style>
+      *{box-sizing:border-box}html,body{margin:0;padding:0;width:76mm;background:#fff;color:#000}
+      body{padding:2mm;font:11px/1.25 "Courier New",monospace}.receipt{width:72mm}
+      h1{margin:0;text-align:center;text-transform:uppercase;font-size:15px;line-height:1.15}
+      h2{margin:2mm 0;text-align:center;font-size:13px;line-height:1.2}
+      dl{display:grid;grid-template-columns:31mm 1fr;gap:1.5mm;margin:0;padding:2mm 0;border-top:1px dashed #000;border-bottom:1px dashed #000}
+      dt{font-weight:700}dd{margin:0;text-align:right;overflow-wrap:anywhere}.footer{margin:2mm 0 0;text-align:center}
+    </style></head><body><section class="receipt"><h1>Bhaktivedanta<br>Health Care Center</h1><h2>${escapeReceiptValue(receipt.campName)}</h2><dl>${rows.map(([label, value]) => `<dt>${label}</dt><dd>${escapeReceiptValue(value)}</dd>`).join('')}</dl><p class="footer">Hare Krishna!</p></section></body></html>`);
+    printWindow.document.close();
+    printWindow.addEventListener('afterprint', () => printWindow.close(), { once: true });
+    window.setTimeout(() => {
+      const contentHeightMm = Math.max(45, Math.ceil(printWindow.document.documentElement.scrollHeight * 25.4 / 96) + 2);
+      const pageStyle = printWindow.document.createElement('style');
+      pageStyle.textContent = `@page{size:76mm ${contentHeightMm}mm;margin:0}`;
+      printWindow.document.head.appendChild(pageStyle);
+      printWindow.focus();
+      printWindow.print();
+    }, 250);
     void recordReceiptPrint(receipt.id).catch(() => setMessage('Receipt opened, but its print audit could not be recorded.'));
   };
 
@@ -64,7 +91,7 @@ const CounterDashboard: React.FC<{ user: User }> = () => {
     </div>
     {receipt && <div className="mt-6 rounded-3xl border bg-white p-6"><h2 className="text-xl font-bold">Receipt ready</h2><p>{receipt.name} · {receipt.departmentName}</p><button onClick={printReceipt} className="mt-4 flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-3 font-bold text-white"><Printer />Print 3-inch receipt</button></div>}
   </div>
-  {receipt && <section className="print-only receipt-sheet"><h1>Bhaktivedanta<br />Health Care Center</h1><h2>{receipt.campName}</h2><dl><dt>Patient Name :</dt><dd>{receipt.name}</dd><dt>Mobile :</dt><dd>{receipt.phoneNo}</dd><dt>Patient ID :</dt><dd>{receipt.patientId}</dd><dt>Department :</dt><dd>{receipt.departmentName}</dd><dt>Department Token :</dt><dd>{receipt.tokenNumber}</dd></dl><p className="receipt-footer">Hare Krishna!</p></section>}</>;
+  </>;
 };
 
 export default CounterDashboard;
