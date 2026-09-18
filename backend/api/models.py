@@ -166,23 +166,9 @@ class FreeCamp(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
 
-class CampDepartmentRoom(models.Model):
-    camp = models.ForeignKey(FreeCamp, on_delete=models.CASCADE, related_name="rooms")
-    department = models.ForeignKey(Department, on_delete=models.PROTECT, related_name="camp_rooms")
-    room_number = models.CharField(max_length=40)
-    capacity = models.PositiveIntegerField(null=True, blank=True)
-    is_active = models.BooleanField(default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        constraints = [models.UniqueConstraint(fields=["camp", "department", "room_number"], name="unique_camp_department_room")]
-        ordering = ["department__name", "room_number"]
-
-
 class CampRegistration(models.Model):
     camp = models.ForeignKey(FreeCamp, on_delete=models.PROTECT, related_name="registrations")
     registration = models.OneToOneField(LabRegistration, on_delete=models.PROTECT, related_name="camp_registration")
-    room = models.ForeignKey(CampDepartmentRoom, on_delete=models.PROTECT, null=True, blank=True, related_name="registrations")
     registered_by = models.ForeignKey(User, on_delete=models.PROTECT, null=True, blank=True, related_name="camp_patient_registrations")
     receipt_print_count = models.PositiveIntegerField(default=0)
     attended = models.BooleanField(default=False)

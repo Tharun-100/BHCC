@@ -54,8 +54,6 @@ urlpatterns = [
     path("registrations/<int:pk>/receipt-print/", views.registration_receipt_printed),
     path("free-camps/", views.free_camps),
     path("free-camps/<int:pk>/", views.free_camp_detail),
-    path("free-camps/<int:camp_id>/rooms/", views.camp_rooms),
-    path("free-camp-rooms/<int:pk>/", views.camp_room_detail),
     path("payroll/", views.payroll),
     path("management/payroll/", views.payroll),
     path("management/payroll/<int:pk>/", views.payroll_detail),

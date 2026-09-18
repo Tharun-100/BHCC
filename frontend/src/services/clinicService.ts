@@ -1,6 +1,6 @@
 import { apiFetch } from '@/lib/api';
 import { getAccessToken } from '@/lib/storage';
-import { Appointment, CampRoom, Department, Feedback, FreeCamp, LabRegistration, PatientLookupResult, PayrollRecord, User, WeeklySchedule } from '@/types';
+import { Appointment, Department, Feedback, FreeCamp, LabRegistration, PatientLookupResult, PayrollRecord, User, WeeklySchedule } from '@/types';
 
 type NewAppointmentInput = Omit<Appointment, 'id' | 'status' | 'paymentId'> & {
   status?: Appointment['status'];
@@ -198,7 +198,6 @@ export interface RegistrationInput {
   departmentId: string;
   isFreeCamp?: boolean;
   campId?: string;
-  roomId?: string;
   existingPatientId?: string;
   createSeparatePatient?: boolean;
 }
@@ -228,10 +227,8 @@ export const createFreeCamp = async (payload: {name:string; date:string; locatio
   return result.id;
 };
 
-export const updateFreeCamp = async (id:string, payload:Partial<{name:string;date:string;location:string;capacity:number|null;status:FreeCamp['status']}>):Promise<void> => {const token=authTokenOrThrow();await apiFetch(`/api/free-camps/${id}/`,{method:'PATCH',authToken:token,body:JSON.stringify(payload)});};
+export const updateFreeCamp = async (id:string, payload:Partial<{name:string;date:string;location:string;capacity:number|null;status:FreeCamp['status'];departmentIds:string[]}>):Promise<void> => {const token=authTokenOrThrow();await apiFetch(`/api/free-camps/${id}/`,{method:'PATCH',authToken:token,body:JSON.stringify(payload)});};
 export const deleteFreeCamp = async (id:string):Promise<void> => {const token=authTokenOrThrow();await apiFetch(`/api/free-camps/${id}/`,{method:'DELETE',authToken:token});};
-export const createCampRoom = async (campId:string,payload:{departmentId:string;roomNumber:string;capacity?:number}):Promise<string> => {const token=authTokenOrThrow();const row=await apiFetch<{id:string}>(`/api/free-camps/${campId}/rooms/`,{method:'POST',authToken:token,body:JSON.stringify(payload)});return row.id;};
-export const updateCampRoom = async (id:string,payload:Partial<{departmentId:string;roomNumber:string;capacity:number|null;isActive:boolean}>):Promise<void> => {const token=authTokenOrThrow();await apiFetch(`/api/free-camp-rooms/${id}/`,{method:'PATCH',authToken:token,body:JSON.stringify(payload)});};
 export const lookupPatientsByPhone = async(phone:string):Promise<PatientLookupResult[]>=>{const token=authTokenOrThrow();return apiFetch(`/api/registrations/patient-lookup/?phone=${encodeURIComponent(phone)}`,{method:'GET',authToken:token});};
 export const recordReceiptPrint = async(id:string):Promise<void>=>{const token=authTokenOrThrow();await apiFetch(`/api/registrations/${id}/receipt-print/`,{method:'POST',authToken:token});};
 

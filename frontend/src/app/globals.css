@@ -20,12 +20,15 @@ body {
 }
 
 @media print {
+  @page { size: 76mm auto; margin: 2mm; }
   body * { visibility: hidden; }
   .print-only, .print-only * { visibility: visible; }
-  .print-only { display: block; position: absolute; inset: 0; padding: 24px; color: #000; background: #fff; }
-  .receipt-sheet { max-width: 420px; margin: 0 auto; font-family: Arial, sans-serif; }
-  .receipt-sheet h1 { font-size: 20px; font-weight: 700; text-align: center; }
-  .receipt-sheet h2 { margin: 8px 0 20px; font-size: 16px; text-align: center; }
-  .receipt-sheet dl { display: grid; grid-template-columns: 140px 1fr; gap: 10px; border-top: 1px solid #000; padding-top: 16px; }
+  .print-only { display: block; position: absolute; left: 0; top: 0; width: 72mm; padding: 2mm; color: #000; background: #fff; }
+  .receipt-sheet { box-sizing: border-box; width: 72mm; margin: 0; font-family: "Courier New", monospace; font-size: 11px; }
+  .receipt-sheet h1 { margin: 0; font-size: 15px; font-weight: 700; line-height: 1.15; text-align: center; text-transform: uppercase; }
+  .receipt-sheet h2 { margin: 2mm 0; font-size: 13px; line-height: 1.2; text-align: center; }
+  .receipt-sheet dl { display: grid; grid-template-columns: 31mm 1fr; gap: 1.5mm; margin: 0; border-top: 1px dashed #000; border-bottom: 1px dashed #000; padding: 2mm 0; }
   .receipt-sheet dt { font-weight: 700; }
+  .receipt-sheet dd { margin: 0; overflow-wrap: anywhere; text-align: right; }
+  .receipt-sheet .receipt-footer { margin: 2mm 0 0; text-align: center; }
 }

@@ -171,12 +171,10 @@ class LabRegistrationSerializer(serializers.ModelSerializer):
     isFreeCamp = serializers.BooleanField(source="is_free_camp", read_only=True)
     campId = serializers.CharField(source="camp_registration.camp_id", read_only=True, allow_null=True)
     campName = serializers.CharField(source="camp_registration.camp.name", read_only=True, allow_null=True)
-    roomId = serializers.CharField(source="camp_registration.room_id", read_only=True, allow_null=True)
-    roomNumber = serializers.CharField(source="camp_registration.room.room_number", read_only=True, allow_null=True)
 
     class Meta:
         model = LabRegistration
-        fields = ["id", "name", "age", "phoneNo", "address", "nativePlace", "patientId", "departmentId", "departmentName", "tokenNumber", "isFreeCamp", "campId", "campName", "roomId", "roomNumber", "fee", "time", "createdAt"]
+        fields = ["id", "name", "age", "phoneNo", "address", "nativePlace", "patientId", "departmentId", "departmentName", "tokenNumber", "isFreeCamp", "campId", "campName", "fee", "time", "createdAt"]
 
     def get_time(self, obj: LabRegistration) -> str:
         return obj.created_at.astimezone().strftime("%I:%M %p")

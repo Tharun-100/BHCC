@@ -12,7 +12,7 @@ from django.contrib.auth.models import User
 from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.db.models.deletion import ProtectedError
-from django.db.models import Count, Q, Sum
+from django.db.models import Q, Sum
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.encoding import force_bytes, force_str
@@ -32,7 +32,7 @@ from .email_service import (
     send_staff_login_otp,
     send_verification_email,
 )
-from .models import Appointment, CampDepartmentRoom, CampRegistration, ConsentRecord, Department, DoctorAvailability, EmailOTP, Feedback, FreeCamp, LabRegistration, PayrollRecord, UserProfile, UserRole, allocate_patient_id
+from .models import Appointment, CampRegistration, ConsentRecord, Department, DoctorAvailability, EmailOTP, Feedback, FreeCamp, LabRegistration, PayrollRecord, UserProfile, UserRole, allocate_patient_id
 from .operational_views import client_ip, record_admin_action
 from .permissions import IsAdmin, IsCounter
 from .serializers import (
@@ -924,7 +924,7 @@ def feedback(request):
 @permission_classes([IsAuthenticated, IsCounter])
 def registrations(request):
     if request.method == "GET":
-        rows = LabRegistration.objects.select_related("patient__profile", "department", "camp_registration__camp", "camp_registration__room").order_by("-created_at")[:200]
+        rows = LabRegistration.objects.select_related("patient__profile", "department", "camp_registration__camp").order_by("-created_at")[:200]
         return Response(LabRegistrationSerializer(rows, many=True).data)
 
     name = (request.data.get("name") or "").strip()
@@ -947,16 +947,6 @@ def registrations(request):
                 return Response({"detail": "The selected department is not part of this camp."}, status=status.HTTP_400_BAD_REQUEST)
             if camp.capacity and camp.registrations.count() >= camp.capacity:
                 return Response({"detail": "This camp has reached its registration capacity."}, status=status.HTTP_409_CONFLICT)
-
-            rooms = CampDepartmentRoom.objects.select_for_update().filter(camp=camp, department=department, is_active=True).order_by("room_number")
-            requested_room_id = request.data.get("roomId")
-            if requested_room_id:
-                rooms = rooms.filter(pk=requested_room_id)
-            room_loads = [(candidate, candidate.registrations.count()) for candidate in rooms]
-            room_loads.sort(key=lambda item: (item[1], item[0].room_number))
-            room = next((candidate for candidate, patient_count in room_loads if not candidate.capacity or patient_count < candidate.capacity), None)
-            if not room:
-                return Response({"detail": "No available room is configured for this camp and department."}, status=status.HTTP_409_CONFLICT)
 
         matching_profiles = list(UserProfile.objects.select_for_update().filter(phone_no=phone_no, role=UserRole.PATIENT).select_related("user"))
         existing_patient_id = request.data.get("existingPatientId")
@@ -999,7 +989,7 @@ def registrations(request):
             fee=0 if is_free_camp else 150, is_free_camp=is_free_camp,
         )
         if camp:
-            CampRegistration.objects.create(camp=camp, registration=obj, room=room, registered_by=request.user)
+            CampRegistration.objects.create(camp=camp, registration=obj, registered_by=request.user)
     return Response(LabRegistrationSerializer(obj).data, status=status.HTTP_201_CREATED)
 
 
@@ -1035,7 +1025,7 @@ def free_camps(request):
         if department_ids:
             camp.departments.set(Department.objects.filter(pk__in=department_ids))
         return Response({"id": str(camp.id)}, status=status.HTTP_201_CREATED)
-    rows = FreeCamp.objects.prefetch_related("departments", "rooms__department").order_by("-date")
+    rows = FreeCamp.objects.prefetch_related("departments").order_by("-date")
     if role == UserRole.COUNTER:
         rows = rows.filter(is_active=True, status=FreeCamp.Status.OPEN)
     return Response([{
@@ -1043,7 +1033,6 @@ def free_camps(request):
         "capacity": row.capacity, "isActive": row.is_active, "status": row.status,
         "registrationCount": row.registrations.count(),
         "departments": DepartmentSerializer(row.departments.all(), many=True).data,
-        "rooms": [{"id": str(room.id), "departmentId": str(room.department_id), "departmentName": room.department.name, "roomNumber": room.room_number, "capacity": room.capacity, "isActive": room.is_active, "registrationCount": room.registrations.count()} for room in row.rooms.all()],
     } for row in rows])
 
 
@@ -1076,75 +1065,22 @@ def free_camp_detail(request, pk: int):
             if capacity < camp.registrations.count():
                 return Response({"detail": "Camp capacity cannot be lower than its current registration count."}, status=status.HTTP_400_BAD_REQUEST)
         camp.capacity = capacity
+    if "departmentIds" in request.data:
+        department_ids = request.data.get("departmentIds") or []
+        departments = Department.objects.filter(pk__in=department_ids)
+        if departments.count() != len(set(str(value) for value in department_ids)):
+            return Response({"detail": "One or more selected departments are invalid."}, status=status.HTTP_400_BAD_REQUEST)
+        used_department_ids = set(camp.registrations.values_list("registration__department_id", flat=True))
+        selected_department_ids = set(departments.values_list("id", flat=True))
+        if not used_department_ids.issubset(selected_department_ids):
+            return Response({"detail": "A department with registered patients cannot be removed from this camp."}, status=status.HTTP_409_CONFLICT)
+        camp.departments.set(departments)
     if "status" in request.data:
         if request.data["status"] not in {value for value, _ in FreeCamp.Status.choices}:
             return Response({"detail": "Invalid camp status."}, status=status.HTTP_400_BAD_REQUEST)
         camp.status = request.data["status"]
         camp.is_active = camp.status in {FreeCamp.Status.DRAFT, FreeCamp.Status.OPEN}
     camp.save()
-    return Response({"ok": True})
-
-
-@api_view(["GET", "POST"])
-@permission_classes([IsAuthenticated])
-def camp_rooms(request, camp_id: int):
-    role = getattr(getattr(request.user, "profile", None), "role", None)
-    if role not in {UserRole.ADMIN, UserRole.COUNTER}:
-        return Response({"detail": "Forbidden."}, status=status.HTTP_403_FORBIDDEN)
-    camp = get_object_or_404(FreeCamp, pk=camp_id)
-    if request.method == "POST":
-        if role != UserRole.ADMIN:
-            return Response({"detail": "Only administrators can configure camp rooms."}, status=status.HTTP_403_FORBIDDEN)
-        department = get_object_or_404(Department, pk=request.data.get("departmentId"))
-        room_number = str(request.data.get("roomNumber") or "").strip()
-        if not room_number:
-            return Response({"detail": "Room number is required."}, status=status.HTTP_400_BAD_REQUEST)
-        room, created = CampDepartmentRoom.objects.get_or_create(camp=camp, department=department, room_number=room_number, defaults={"capacity": request.data.get("capacity") or None})
-        if not created:
-            return Response({"detail": "This room is already mapped to the department for this camp."}, status=status.HTTP_409_CONFLICT)
-        camp.departments.add(department)
-        return Response({"id": str(room.id)}, status=status.HTTP_201_CREATED)
-    rows = camp.rooms.select_related("department").annotate(registration_count=Count("registrations"))
-    return Response([{"id": str(row.id), "departmentId": str(row.department_id), "departmentName": row.department.name, "roomNumber": row.room_number, "capacity": row.capacity, "isActive": row.is_active, "registrationCount": row.registration_count} for row in rows])
-
-
-@api_view(["PATCH", "DELETE"])
-@permission_classes([IsAuthenticated, IsAdmin])
-def camp_room_detail(request, pk: int):
-    room = get_object_or_404(CampDepartmentRoom, pk=pk)
-    if request.method == "DELETE":
-        if room.registrations.exists():
-            return Response({"detail": "A room with registered patients cannot be deleted. Close it instead."}, status=status.HTTP_409_CONFLICT)
-        room.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
-    if "roomNumber" in request.data:
-        room_number = str(request.data["roomNumber"]).strip()
-        if not room_number:
-            return Response({"detail": "Room number is required."}, status=status.HTTP_400_BAD_REQUEST)
-        room.room_number = room_number
-    if "departmentId" in request.data and str(request.data["departmentId"]) != str(room.department_id):
-        if room.registrations.exists():
-            return Response({"detail": "The department cannot be changed after patients have been assigned to this room. Add a new room instead."}, status=status.HTTP_409_CONFLICT)
-        room.department = get_object_or_404(Department, pk=request.data["departmentId"])
-    if "capacity" in request.data:
-        capacity = request.data["capacity"] or None
-        if capacity is not None:
-            try:
-                capacity = int(capacity)
-            except (TypeError, ValueError):
-                return Response({"detail": "Room capacity must be a positive whole number or empty for unlimited."}, status=status.HTTP_400_BAD_REQUEST)
-            if capacity < 1:
-                return Response({"detail": "Room capacity must be a positive whole number or empty for unlimited."}, status=status.HTTP_400_BAD_REQUEST)
-            if capacity < room.registrations.count():
-                return Response({"detail": "Room capacity cannot be lower than its current registration count."}, status=status.HTTP_400_BAD_REQUEST)
-        room.capacity = capacity
-    if "isActive" in request.data:
-        room.is_active = bool(request.data["isActive"])
-    try:
-        room.save()
-    except IntegrityError:
-        return Response({"detail": "That room is already mapped to this department for the camp."}, status=status.HTTP_409_CONFLICT)
-    room.camp.departments.add(room.department)
     return Response({"ok": True})
 
 

@@ -15,7 +15,7 @@ from .email_service import (
     send_contact_notification,
     send_staff_login_otp,
 )
-from .models import Appointment, AttendanceAuditLog, AttendanceRecord, CampDepartmentRoom, CampRegistration, Department, FreeCamp, LabRegistration, PayrollRecord, Prescription, UserProfile, UserRole, allocate_patient_id
+from .models import Appointment, AttendanceAuditLog, AttendanceRecord, CampRegistration, Department, FreeCamp, LabRegistration, PayrollRecord, Prescription, UserProfile, UserRole, allocate_patient_id
 
 
 class ClinicOperationsTests(TestCase):
@@ -56,59 +56,23 @@ class ClinicOperationsTests(TestCase):
         self.assertEqual(row.status, PayrollRecord.Status.PAID)
         self.assertEqual(row.confirmed_by, self.admin)
 
-    def test_admin_maps_multiple_rooms_and_counter_receipt_has_minimal_fields(self):
+    def test_admin_selects_departments_and_counter_receipt_has_minimal_fields(self):
         admin_client = APIClient(); admin_client.force_authenticate(self.admin)
-        response = admin_client.post("/api/free-camps/", {"name":"Community Camp", "date":(date.today()+timedelta(days=1)).isoformat()}, format="json")
+        response = admin_client.post("/api/free-camps/", {"name":"Community Camp", "date":(date.today()+timedelta(days=1)).isoformat(), "departmentIds":[str(self.department.id)]}, format="json")
         self.assertEqual(response.status_code, 201)
         camp_id = response.data["id"]
-        for room_number in ("101", "102"):
-            response = admin_client.post(f"/api/free-camps/{camp_id}/rooms/", {"departmentId":str(self.department.id), "roomNumber":room_number, "capacity":1}, format="json")
-            self.assertEqual(response.status_code, 201)
-        self.assertEqual(CampDepartmentRoom.objects.filter(camp_id=camp_id).count(), 2)
         self.assertEqual(admin_client.patch(f"/api/free-camps/{camp_id}/", {"status":"OPEN"}, format="json").status_code, 200)
 
         counter_client = APIClient(); counter_client.force_authenticate(self.counter)
         response = counter_client.post("/api/registrations/", {"name":"Camp Patient", "phoneNo":"9903554605", "address":"Newtown", "departmentId":str(self.department.id), "campId":camp_id, "isFreeCamp":True}, format="json")
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.data["roomNumber"], "101")
-        self.assertEqual(set(["name", "phoneNo", "patientId", "departmentName", "roomNumber", "tokenNumber"]) - set(response.data), set())
+        self.assertEqual(set(["name", "phoneNo", "patientId", "departmentName", "tokenNumber"]) - set(response.data), set())
+        self.assertNotIn("roomNumber", response.data)
         self.assertNotIn("doctorName", response.data)
         camp_registration = CampRegistration.objects.get(registration_id=response.data["id"])
         self.assertEqual(camp_registration.registered_by, self.counter)
         self.assertEqual(counter_client.post(f"/api/registrations/{response.data['id']}/receipt-print/").status_code, 200)
         camp_registration.refresh_from_db(); self.assertEqual(camp_registration.receipt_print_count, 1)
-        second = counter_client.post("/api/registrations/", {"name":"Second Patient", "phoneNo":"9903554615", "address":"Newtown", "departmentId":str(self.department.id), "campId":camp_id, "isFreeCamp":True}, format="json")
-        self.assertEqual(second.status_code, 201)
-        self.assertEqual(second.data["roomNumber"], "102")
-        room_101 = CampDepartmentRoom.objects.get(camp_id=camp_id, room_number="101")
-        self.assertEqual(admin_client.patch(f"/api/free-camp-rooms/{room_101.id}/", {"capacity":None}, format="json").status_code, 200)
-        third = counter_client.post("/api/registrations/", {"name":"Third Patient", "phoneNo":"9903554616", "address":"Newtown", "departmentId":str(self.department.id), "campId":camp_id, "isFreeCamp":True}, format="json")
-        self.assertEqual(third.status_code, 201)
-        self.assertEqual(third.data["roomNumber"], "101")
-        response = admin_client.patch(f"/api/free-camp-rooms/{room_101.id}/", {"roomNumber":"101A", "capacity":5, "isActive":False}, format="json")
-        self.assertEqual(response.status_code, 200)
-        room_101.refresh_from_db()
-        self.assertEqual(room_101.room_number, "101A")
-        self.assertEqual(room_101.capacity, 5)
-        self.assertFalse(room_101.is_active)
-
-        another_department = Department.objects.create(name="Medicine", base_fee=500, token_prefix="MED", location="Room 3")
-        response = admin_client.patch(f"/api/free-camp-rooms/{room_101.id}/", {"departmentId":str(another_department.id)}, format="json")
-        self.assertEqual(response.status_code, 409)
-        room_101.refresh_from_db()
-        self.assertEqual(room_101.department, self.department)
-
-    def test_admin_can_change_department_for_unused_camp_room(self):
-        camp = FreeCamp.objects.create(name="Editable Camp", date=date.today()+timedelta(days=1), created_by=self.admin)
-        room = CampDepartmentRoom.objects.create(camp=camp, department=self.department, room_number="201")
-        another_department = Department.objects.create(name="Medicine", base_fee=500, token_prefix="MED", location="Room 3")
-        client = APIClient(); client.force_authenticate(self.admin)
-        response = client.patch(f"/api/free-camp-rooms/{room.id}/", {"departmentId":str(another_department.id), "roomNumber":"202", "capacity":25}, format="json")
-        self.assertEqual(response.status_code, 200)
-        room.refresh_from_db()
-        self.assertEqual(room.department, another_department)
-        self.assertEqual(room.room_number, "202")
-        self.assertEqual(room.capacity, 25)
 
     def test_admin_can_edit_and_delete_only_empty_camps(self):
         client = APIClient(); client.force_authenticate(self.admin)
@@ -122,18 +86,12 @@ class ClinicOperationsTests(TestCase):
         self.assertFalse(FreeCamp.objects.filter(pk=camp.id).exists())
 
         protected_camp = FreeCamp.objects.create(name="Protected Camp", date=date.today()+timedelta(days=1), created_by=self.admin)
-        room = CampDepartmentRoom.objects.create(camp=protected_camp, department=self.department, room_number="301")
+        protected_camp.departments.add(self.department)
         registration = LabRegistration.objects.create(name="Protected Patient", phone_no="9903554699", department=self.department, is_free_camp=True)
-        CampRegistration.objects.create(camp=protected_camp, registration=registration, room=room, registered_by=self.counter)
+        CampRegistration.objects.create(camp=protected_camp, registration=registration, registered_by=self.counter)
         response = client.delete(f"/api/free-camps/{protected_camp.id}/")
         self.assertEqual(response.status_code, 409)
         self.assertTrue(FreeCamp.objects.filter(pk=protected_camp.id).exists())
-
-    def test_counter_cannot_create_camp_rooms(self):
-        camp = FreeCamp.objects.create(name="Admin Managed", date=date.today()+timedelta(days=1), created_by=self.admin)
-        client = APIClient(); client.force_authenticate(self.counter)
-        response = client.post(f"/api/free-camps/{camp.id}/rooms/", {"departmentId":str(self.department.id), "roomNumber":"201"}, format="json")
-        self.assertEqual(response.status_code, 403)
 
     @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
     def test_online_registration_reuses_counter_patient_id(self):
