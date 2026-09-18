@@ -53,8 +53,9 @@ const CounterDashboard: React.FC<{ user: User }> = () => {
       ['Department Token :', receipt.tokenNumber],
     ];
     printWindow.document.write(`<!doctype html><html><head><meta charset="UTF-8"><title>Camp receipt</title><style>
-      *{box-sizing:border-box}html,body{margin:0;width:80mm;background:#eee;color:#000}
-      body{padding:20px;font-family:"Courier New",Courier,monospace;font-size:13px;font-weight:700}
+      *{box-sizing:border-box;font-weight:900!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+      html,body{margin:0;width:80mm;background:#eee;color:#000}
+      body{padding:20px;font-family:"Courier New",Courier,monospace;font-size:13px;font-weight:900;-webkit-text-stroke:.18px #000}
       .receipt{width:80mm;margin:0;padding:4mm 3mm;background:#fff}
       .hospital-name{text-align:center;font-size:16px;line-height:18px;margin-bottom:5px}
       .camp-name{text-align:center;font-size:14px;line-height:17px;margin-bottom:8px}
