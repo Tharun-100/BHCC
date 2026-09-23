@@ -174,7 +174,7 @@ class LabRegistrationSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = LabRegistration
-        fields = ["id", "name", "age", "phoneNo", "address", "nativePlace", "patientId", "departmentId", "departmentName", "tokenNumber", "isFreeCamp", "campId", "campName", "fee", "time", "createdAt"]
+        fields = ["id", "name", "age", "gender", "phoneNo", "address", "nativePlace", "patientId", "departmentId", "departmentName", "tokenNumber", "isFreeCamp", "campId", "campName", "fee", "time", "createdAt"]
 
     def get_time(self, obj: LabRegistration) -> str:
         return obj.created_at.astimezone().strftime("%I:%M %p")

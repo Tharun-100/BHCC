@@ -193,7 +193,9 @@ export const listApprovedFeedback = async (): Promise<Feedback[]> =>
 export interface RegistrationInput {
   name: string;
   phoneNo: string;
-  address?: string;
+  address: string;
+  age: number | string;
+  gender: string;
   nativePlace?: string;
   departmentId: string;
   isFreeCamp?: boolean;
@@ -216,6 +218,11 @@ export const listRegistrations = async (): Promise<LabRegistration[]> => {
   return apiFetch<LabRegistration[]>('/api/registrations/', { method: 'GET', authToken: token });
 };
 
+export const updateRegistration = async (id:string, payload:Partial<RegistrationInput>):Promise<LabRegistration> => {
+  const token = authTokenOrThrow();
+  return apiFetch<LabRegistration>(`/api/registrations/${id}/`, {method:'PATCH', authToken:token, body:JSON.stringify(payload)});
+};
+
 export const listFreeCamps = async (): Promise<FreeCamp[]> => {
   const token = authTokenOrThrow();
   return apiFetch<FreeCamp[]>('/api/free-camps/', { method: 'GET', authToken: token });
@@ -229,7 +236,7 @@ export const createFreeCamp = async (payload: {name:string; date:string; locatio
 
 export const updateFreeCamp = async (id:string, payload:Partial<{name:string;date:string;location:string;capacity:number|null;status:FreeCamp['status'];departmentIds:string[]}>):Promise<void> => {const token=authTokenOrThrow();await apiFetch(`/api/free-camps/${id}/`,{method:'PATCH',authToken:token,body:JSON.stringify(payload)});};
 export const deleteFreeCamp = async (id:string):Promise<void> => {const token=authTokenOrThrow();await apiFetch(`/api/free-camps/${id}/`,{method:'DELETE',authToken:token});};
-export const lookupPatientsByPhone = async(phone:string):Promise<PatientLookupResult[]>=>{const token=authTokenOrThrow();return apiFetch(`/api/registrations/patient-lookup/?phone=${encodeURIComponent(phone)}`,{method:'GET',authToken:token});};
+export const lookupPatientsByPhone = async(phone:string,name=''):Promise<PatientLookupResult[]>=>{const token=authTokenOrThrow();return apiFetch(`/api/registrations/patient-lookup/?phone=${encodeURIComponent(phone)}&name=${encodeURIComponent(name)}`,{method:'GET',authToken:token});};
 export const recordReceiptPrint = async(id:string):Promise<void>=>{const token=authTokenOrThrow();await apiFetch(`/api/registrations/${id}/receipt-print/`,{method:'POST',authToken:token});};
 
 export const listPayroll = async (month: string): Promise<PayrollRecord[]> => {

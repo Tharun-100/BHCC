@@ -12,7 +12,7 @@ from django.contrib.auth.models import User
 from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.db.models.deletion import ProtectedError
-from django.db.models import Q, Sum
+from django.db.models import Count, Q, Sum
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.encoding import force_bytes, force_str
@@ -32,7 +32,7 @@ from .email_service import (
     send_staff_login_otp,
     send_verification_email,
 )
-from .models import Appointment, CampRegistration, ConsentRecord, Department, DoctorAvailability, EmailOTP, Feedback, FreeCamp, LabRegistration, PayrollRecord, UserProfile, UserRole, allocate_patient_id
+from .models import AdminAuditLog, Appointment, CampRegistration, ConsentRecord, Department, DoctorAvailability, EmailOTP, Feedback, FreeCamp, LabRegistration, PayrollRecord, UserProfile, UserRole, allocate_patient_id
 from .operational_views import client_ip, record_admin_action
 from .permissions import IsAdmin, IsCounter
 from .serializers import (
@@ -931,10 +931,16 @@ def registrations(request):
     phone_no = "".join(ch for ch in str(request.data.get("phoneNo") or "") if ch.isdigit())[-10:]
     address = (request.data.get("address") or "").strip()
     native_place = (request.data.get("nativePlace") or "").strip()
+    age_value = request.data.get("age")
+    gender = str(request.data.get("gender") or "").strip().upper()
+    try:
+        age = int(age_value)
+    except (TypeError, ValueError):
+        age = None
     department = get_object_or_404(Department, pk=request.data.get("departmentId"))
     is_free_camp = bool(request.data.get("isFreeCamp", False))
-    if not name or len(phone_no) != 10 or (is_free_camp and not address) or (not is_free_camp and not native_place):
-        return Response({"detail": "Name, valid 10-digit phone number, department, and address/native place are required."}, status=status.HTTP_400_BAD_REQUEST)
+    if not name or len(phone_no) != 10 or not address or age is None or not 0 <= age <= 120 or gender not in {"MALE", "FEMALE", "OTHER"}:
+        return Response({"detail": "Name, valid 10-digit mobile number, address, age (0-120), gender, and department are required."}, status=status.HTTP_400_BAD_REQUEST)
 
     with transaction.atomic():
         today = timezone.localdate()
@@ -961,13 +967,14 @@ def registrations(request):
                 return Response({"detail": "This mobile number already belongs to an existing patient. Confirm the correct patient before registering.", "matches": [{"userId": str(item.user_id), "patientId": item.patient_id, "name": item.name, "phoneNo": item.phone_no} for item in matching_profiles]}, status=status.HTTP_409_CONFLICT)
         if profile:
             patient = profile.user
-            if not profile.name:
-                profile.name = name
+            profile.name = name
+            profile.phone_no = phone_no
+            profile.address = address
+            profile.age = age
+            profile.gender = gender
             if native_place:
                 profile.native_place = native_place
-            if address:
-                profile.address = address
-            profile.save(update_fields=["name", "native_place", "address"])
+            profile.save(update_fields=["name", "phone_no", "address", "age", "gender", "native_place"])
         else:
             username = f"patient-{phone_no}"
             suffix = 1
@@ -977,14 +984,14 @@ def registrations(request):
             patient = User.objects.create_user(username=username)
             patient.set_unusable_password()
             patient.save(update_fields=["password"])
-            profile = UserProfile.objects.create(user=patient, role=UserRole.PATIENT, name=name, phone_no=phone_no, address=address, native_place=native_place)
+            profile = UserProfile.objects.create(user=patient, role=UserRole.PATIENT, name=name, phone_no=phone_no, address=address, age=age, gender=gender, native_place=native_place)
             allocate_patient_id(profile)
 
         last = LabRegistration.objects.select_for_update().filter(department=department, registration_date=today).order_by("-department_sequence").first()
         sequence = (last.department_sequence if last and last.department_sequence else 0) + 1
         prefix = (department.token_prefix or "".join(word[0] for word in department.name.split())[:4] or "DEPT").upper()
         obj = LabRegistration.objects.create(
-            name=name, phone_no=phone_no, address=address, native_place=native_place, patient=patient,
+            name=name, age=age, gender=gender, phone_no=phone_no, address=address, native_place=native_place, patient=patient,
             department=department, department_sequence=sequence, token_number=f"{prefix}-{sequence:03d}",
             fee=0 if is_free_camp else 150, is_free_camp=is_free_camp,
         )
@@ -993,14 +1000,68 @@ def registrations(request):
     return Response(LabRegistrationSerializer(obj).data, status=status.HTTP_201_CREATED)
 
 
+@api_view(["PATCH"])
+@permission_classes([IsAuthenticated, IsCounter])
+def registration_detail(request, pk: int):
+    registration = get_object_or_404(LabRegistration.objects.select_related("patient__profile", "department"), pk=pk)
+    name = str(request.data.get("name", registration.name) or "").strip()
+    phone_no = "".join(ch for ch in str(request.data.get("phoneNo", registration.phone_no) or "") if ch.isdigit())[-10:]
+    address = str(request.data.get("address", registration.address) or "").strip()
+    gender = str(request.data.get("gender", registration.gender) or "").strip().upper()
+    try:
+        age = int(request.data.get("age", registration.age))
+    except (TypeError, ValueError):
+        age = None
+    if not name or len(phone_no) != 10 or not address or age is None or not 0 <= age <= 120 or gender not in {"MALE", "FEMALE", "OTHER"}:
+        return Response({"detail": "Name, valid 10-digit mobile number, address, age (0-120), and gender are required."}, status=status.HTTP_400_BAD_REQUEST)
+    department = registration.department
+    requested_department_id = request.data.get("departmentId")
+    if requested_department_id and str(requested_department_id) != str(registration.department_id):
+        department = get_object_or_404(Department, pk=requested_department_id)
+        if registration.is_free_camp and not registration.camp_registration.camp.departments.filter(pk=department.pk).exists():
+            return Response({"detail": "The selected department is not part of this camp."}, status=status.HTTP_400_BAD_REQUEST)
+
+    changed_fields = [field for field, previous, current in [
+        ("name", registration.name, name), ("phoneNo", registration.phone_no, phone_no),
+        ("address", registration.address, address), ("age", registration.age, age),
+        ("gender", registration.gender, gender), ("departmentId", registration.department_id, department.pk if department else None),
+    ] if str(previous) != str(current)]
+    with transaction.atomic():
+        if department and department.pk != registration.department_id:
+            last = LabRegistration.objects.select_for_update().filter(department=department, registration_date=registration.registration_date).exclude(pk=registration.pk).order_by("-department_sequence").first()
+            registration.department_sequence = (last.department_sequence if last and last.department_sequence else 0) + 1
+            prefix = (department.token_prefix or "".join(word[0] for word in department.name.split())[:4] or "DEPT").upper()
+            registration.token_number = f"{prefix}-{registration.department_sequence:03d}"
+        registration.name = name
+        registration.phone_no = phone_no
+        registration.address = address
+        registration.age = age
+        registration.gender = gender
+        registration.department = department
+        registration.native_place = str(request.data.get("nativePlace", registration.native_place) or "").strip()
+        registration.save()
+        if registration.patient_id:
+            profile = registration.patient.profile
+            profile.name = name
+            profile.phone_no = phone_no
+            profile.address = address
+            profile.age = age
+            profile.gender = gender
+            profile.native_place = registration.native_place
+            profile.save(update_fields=["name", "phone_no", "address", "age", "gender", "native_place"])
+        AdminAuditLog.objects.create(actor=request.user, action="PATIENT_REGISTRATION_UPDATED", target_type="LabRegistration", target_id=str(registration.pk), summary=f"Updated registration for patient ID {registration.patient.profile.patient_id if registration.patient_id else 'unlinked'}", metadata={"changedFields": changed_fields})
+    return Response(LabRegistrationSerializer(registration).data)
+
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated, IsCounter])
 def patient_lookup(request):
     phone_no = "".join(ch for ch in str(request.query_params.get("phone") or "") if ch.isdigit())[-10:]
     if len(phone_no) != 10:
         return Response({"detail": "Enter a valid 10-digit mobile number."}, status=status.HTTP_400_BAD_REQUEST)
+    requested_name = " ".join(str(request.query_params.get("name") or "").casefold().split())
     rows = UserProfile.objects.filter(phone_no=phone_no, role=UserRole.PATIENT).select_related("user").order_by("name")
-    return Response([{"userId": str(row.user_id), "patientId": row.patient_id, "name": row.name, "phoneNo": row.phone_no, "address": row.address} for row in rows])
+    return Response([{"userId": str(row.user_id), "patientId": row.patient_id, "name": row.name, "phoneNo": row.phone_no, "address": row.address, "age": row.age, "gender": row.gender, "nativePlace": row.native_place, "exactMatch": bool(requested_name and " ".join(row.name.casefold().split()) == requested_name)} for row in rows])
 
 
 @api_view(["GET", "POST"])
@@ -1028,12 +1089,18 @@ def free_camps(request):
     rows = FreeCamp.objects.prefetch_related("departments").order_by("-date")
     if role == UserRole.COUNTER:
         rows = rows.filter(is_active=True, status=FreeCamp.Status.OPEN)
-    return Response([{
-        "id": str(row.id), "name": row.name, "date": row.date, "location": row.location,
-        "capacity": row.capacity, "isActive": row.is_active, "status": row.status,
-        "registrationCount": row.registrations.count(),
-        "departments": DepartmentSerializer(row.departments.all(), many=True).data,
-    } for row in rows])
+    output = []
+    for row in rows:
+        department_counts = {item["registration__department_id"]: item["patientCount"] for item in row.registrations.values("registration__department_id").annotate(patientCount=Count("id"))}
+        camp_departments = list(row.departments.all())
+        output.append({
+            "id": str(row.id), "name": row.name, "date": row.date, "location": row.location,
+            "capacity": row.capacity, "isActive": row.is_active, "status": row.status,
+            "registrationCount": sum(department_counts.values()),
+            "departments": DepartmentSerializer(camp_departments, many=True).data,
+            "departmentStats": [{"departmentId": str(department.id), "departmentName": department.name, "patientCount": department_counts.get(department.id, 0)} for department in camp_departments],
+        })
+    return Response(output)
 
 
 @api_view(["PATCH", "DELETE"])

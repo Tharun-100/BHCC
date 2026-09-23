@@ -68,10 +68,22 @@ export default function AdminCamps() {
     catch (error: any) { setMessage(error?.message || 'Could not delete camp.'); }
   };
 
+  const totalPatients = camps.reduce((sum, camp) => sum + camp.registrationCount, 0);
+  const openCamps = camps.filter((camp) => camp.status === 'OPEN').length;
+  const overallDepartmentCounts = camps.flatMap((camp) => camp.departmentStats).reduce<Record<string, number>>((totals, row) => {
+    totals[row.departmentName] = (totals[row.departmentName] || 0) + row.patientCount;
+    return totals;
+  }, {});
+
   return <div className="mx-auto max-w-7xl px-4 py-12">
     <h1 className="text-3xl font-black">Camp Management</h1>
     <p className="mb-8 text-gray-500">Create camps and select the departments available for patient registration.</p>
     {message && <p className="mb-5 rounded-xl bg-sky-50 p-3 text-sky-800">{message}</p>}
+    <section className="mb-8 grid gap-4 md:grid-cols-3">
+      <div className="rounded-2xl border bg-white p-5"><p className="text-sm font-bold text-gray-500">Total camp patients</p><p className="mt-1 text-3xl font-black text-sky-700">{totalPatients}</p></div>
+      <div className="rounded-2xl border bg-white p-5"><p className="text-sm font-bold text-gray-500">Open camps</p><p className="mt-1 text-3xl font-black text-green-700">{openCamps}</p></div>
+      <div className="rounded-2xl border bg-white p-5"><p className="mb-2 text-sm font-bold text-gray-500">All camps by department</p>{Object.entries(overallDepartmentCounts).sort((a, b) => b[1] - a[1]).map(([name, count]) => <div key={name} className="flex justify-between text-sm"><span>{name}</span><b>{count}</b></div>)}{Object.keys(overallDepartmentCounts).length === 0 && <p className="text-sm text-gray-400">No registrations yet</p>}</div>
+    </section>
     <form onSubmit={submit} className="mx-auto max-w-3xl space-y-4 rounded-3xl border bg-white p-7">
       <h2 className="text-xl font-bold">Create camp</h2>
       <input required placeholder="Camp name" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} className="w-full rounded-xl border p-3" />
@@ -84,7 +96,7 @@ export default function AdminCamps() {
 
     <div className="mt-8 space-y-4">{camps.map((camp) => <article key={camp.id} className="rounded-3xl border bg-white p-6">
       <div className="flex flex-wrap justify-between gap-4">
-        <div><h2 className="text-xl font-bold">{camp.name}</h2><p className="text-gray-500">{camp.date} · {camp.location} · {camp.status}</p><p className="text-sm">{camp.registrationCount}{camp.capacity ? ` / ${camp.capacity}` : ''} registrations</p><p className="mt-2 text-sm"><b>Departments:</b> {camp.departments.map((department) => department.name).join(', ') || 'None selected'}</p></div>
+        <div><h2 className="text-xl font-bold">{camp.name}</h2><p className="text-gray-500">{camp.date} · {camp.location} · {camp.status}</p><p className="mt-1 text-lg font-black text-sky-700">{camp.registrationCount}{camp.capacity ? ` / ${camp.capacity}` : ''} patients registered</p></div>
         <div className="flex flex-wrap gap-2">
           <button type="button" onClick={() => startCampEdit(camp)} className="rounded-lg border border-sky-200 px-3 py-2 text-sm font-bold text-sky-700">Edit camp</button>
           {camp.status !== 'OPEN' && <button type="button" onClick={() => setStatus(camp, 'OPEN')} className="rounded-lg bg-green-600 px-3 py-2 text-sm font-bold text-white">Open</button>}
@@ -93,6 +105,7 @@ export default function AdminCamps() {
           <button type="button" onClick={() => removeCamp(camp)} className="rounded-lg border border-red-300 px-3 py-2 text-sm font-bold text-red-700">Delete</button>
         </div>
       </div>
+      <div className="mt-5"><h3 className="mb-2 text-sm font-bold uppercase tracking-wide text-gray-500">Department-wise patients</h3><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{camp.departmentStats.map((row) => <div key={row.departmentId} className="flex items-center justify-between rounded-xl bg-gray-50 px-4 py-3"><span className="font-semibold">{row.departmentName}</span><span className="rounded-full bg-sky-100 px-3 py-1 font-black text-sky-800">{row.patientCount}</span></div>)}{camp.departmentStats.length === 0 && <p className="text-sm text-gray-400">No departments selected.</p>}</div></div>
       {editingCampId === camp.id && <div className="mt-4 grid gap-3 rounded-2xl border border-sky-200 bg-sky-50 p-4 md:grid-cols-2">
         <label className="text-sm font-semibold">Camp name<input value={campEdit.name} onChange={(event) => setCampEdit({ ...campEdit, name: event.target.value })} className="mt-1 w-full rounded-lg border p-2" /></label>
         <label className="text-sm font-semibold">Camp date<input type="date" value={campEdit.date} onChange={(event) => setCampEdit({ ...campEdit, date: event.target.value })} className="mt-1 w-full rounded-lg border p-2" /></label>

@@ -25,6 +25,8 @@ class UserProfile(models.Model):
     address = models.TextField(blank=True, default="")
     native_place = models.CharField(max_length=160, blank=True, default="")
     phone_no = models.CharField(max_length=20, blank=True, default="")
+    age = models.PositiveSmallIntegerField(null=True, blank=True)
+    gender = models.CharField(max_length=20, blank=True, default="")
     profession = models.CharField(max_length=120, blank=True, default="")
     staff_type = models.CharField(max_length=80, blank=True, default="")
     salary = models.PositiveIntegerField(null=True, blank=True)
@@ -130,6 +132,7 @@ class Feedback(models.Model):
 class LabRegistration(models.Model):
     name = models.CharField(max_length=120)
     age = models.PositiveIntegerField(null=True, blank=True)
+    gender = models.CharField(max_length=20, blank=True, default="")
     phone_no = models.CharField(max_length=20, blank=True, default="")
     address = models.TextField(blank=True, default="")
     native_place = models.CharField(max_length=160, blank=True, default="")

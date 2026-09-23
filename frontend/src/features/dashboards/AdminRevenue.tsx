@@ -1,21 +1,25 @@
 import React from 'react';
-import { Appointment, LabRegistration, User } from '../../types';
+import { Appointment, Department, LabRegistration, User } from '../../types';
 import { Download, TrendingUp, Users, Wallet } from 'lucide-react';
-import { listAllAppointments, listRegistrations } from '../../services/clinicService';
+import { listAllAppointments, listDepartments, listRegistrations } from '../../services/clinicService';
 import { downloadCsv } from '@/lib/downloadCsv';
+import RegistrationEditor from '@/components/RegistrationEditor';
 
 const currency = (value: number) => `₹${value.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
 
 const AdminRevenue: React.FC<{ user: User }> = () => {
   const [registrations, setRegistrations] = React.useState<LabRegistration[]>([]);
   const [appointments, setAppointments] = React.useState<Appointment[]>([]);
+  const [departments, setDepartments] = React.useState<Department[]>([]);
+  const [editingId, setEditingId] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
-    Promise.all([listRegistrations(), listAllAppointments()])
-      .then(([registrationRows, appointmentRows]) => {
+    Promise.all([listRegistrations(), listAllAppointments(), listDepartments()])
+      .then(([registrationRows, appointmentRows, departmentRows]) => {
         setRegistrations(registrationRows);
         setAppointments(appointmentRows);
+        setDepartments(departmentRows);
         setError(null);
       })
       .catch(() => setError('Revenue data could not be loaded. Please try again.'));
@@ -83,6 +87,10 @@ const AdminRevenue: React.FC<{ user: User }> = () => {
             </button>
           </div>
         </div>
+      </div>
+      <div className="mt-10 overflow-hidden rounded-3xl border bg-white">
+        <div className="border-b p-6"><h2 className="text-xl font-bold">Patient registrations</h2><p className="text-sm text-gray-500">Administrators can correct mandatory patient details. Every change is recorded in the audit log.</p></div>
+        <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="bg-gray-50"><tr><th className="p-4">Patient</th><th className="p-4">Type</th><th className="p-4">Department</th><th className="p-4">Token</th><th className="p-4"></th></tr></thead><tbody>{registrations.map((row) => <React.Fragment key={row.id}><tr className="border-t"><td className="p-4 font-bold">{row.name}<small className="block font-normal">{row.phoneNo} · Age {row.age} · {row.gender}</small><small className="block font-normal">{row.patientId}</small></td><td className="p-4">{row.isFreeCamp ? 'Free camp' : 'General ₹150'}</td><td className="p-4">{row.departmentName}</td><td className="p-4">{row.tokenNumber}</td><td className="p-4"><button type="button" onClick={() => setEditingId(row.id)} className="font-bold text-sky-700">Edit details</button></td></tr>{editingId === row.id && <tr><td colSpan={5} className="p-4"><RegistrationEditor registration={row} departments={departments} onCancel={() => setEditingId(null)} onSaved={(updated) => { setRegistrations((current) => current.map((item) => item.id === updated.id ? updated : item)); setEditingId(null); }} /></td></tr>}</React.Fragment>)}</tbody></table></div>
       </div>
     </div>
   );

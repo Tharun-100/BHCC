@@ -168,6 +168,7 @@ export interface LabRegistration {
   id: string;
   name: string;
   age?: number | null;
+  gender: string;
   phoneNo: string;
   address: string;
   nativePlace: string;
@@ -209,6 +210,7 @@ export interface FreeCamp {
   status: 'DRAFT' | 'OPEN' | 'CLOSED' | 'CANCELLED';
   registrationCount: number;
   departments: Department[];
+  departmentStats: Array<{ departmentId: string; departmentName: string; patientCount: number }>;
 }
 
 export interface PatientLookupResult {
@@ -217,4 +219,8 @@ export interface PatientLookupResult {
   name: string;
   phoneNo: string;
   address: string;
+  age?: number | null;
+  gender: string;
+  nativePlace: string;
+  exactMatch: boolean;
 }

@@ -50,6 +50,7 @@ urlpatterns = [
     path("feedback/", views.feedback),
     path("registrations", views.registrations),
     path("registrations/", views.registrations),
+    path("registrations/<int:pk>/", views.registration_detail),
     path("registrations/patient-lookup/", views.patient_lookup),
     path("registrations/<int:pk>/receipt-print/", views.registration_receipt_printed),
     path("free-camps/", views.free_camps),

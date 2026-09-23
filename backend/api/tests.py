@@ -38,11 +38,40 @@ class ClinicOperationsTests(TestCase):
 
     def test_counter_registration_creates_patient_id_and_daily_token(self):
         client = APIClient(); client.force_authenticate(self.counter)
-        response = client.post("/api/registrations/", {"name":"Camp Patient", "phoneNo":"9903554604", "nativePlace":"Kolkata", "departmentId":str(self.department.id)}, format="json")
+        response = client.post("/api/registrations/", {"name":"Camp Patient", "phoneNo":"9903554604", "address":"Kolkata", "age":35, "gender":"MALE", "departmentId":str(self.department.id)}, format="json")
         self.assertEqual(response.status_code, 201)
         self.assertTrue(response.data["patientId"].startswith("BHCC"))
         self.assertEqual(response.data["tokenNumber"], "DEN-001")
         self.assertEqual(LabRegistration.objects.get().fee, 150)
+
+    def test_registration_requires_demographics_and_existing_lookup_prefills(self):
+        client = APIClient(); client.force_authenticate(self.counter)
+        invalid = client.post("/api/registrations/", {"name":"Missing Details", "phoneNo":"9903554680", "departmentId":str(self.department.id)}, format="json")
+        self.assertEqual(invalid.status_code, 400)
+        created = client.post("/api/registrations/", {"name":"Existing Patient", "phoneNo":"9903554680", "address":"Newtown", "age":31, "gender":"FEMALE", "departmentId":str(self.department.id)}, format="json")
+        self.assertEqual(created.status_code, 201)
+        lookup = client.get("/api/registrations/patient-lookup/?phone=9903554680&name=Existing%20Patient")
+        self.assertEqual(lookup.status_code, 200)
+        self.assertTrue(lookup.data[0]["exactMatch"])
+        self.assertEqual(lookup.data[0]["age"], 31)
+        self.assertEqual(lookup.data[0]["gender"], "FEMALE")
+
+    def test_counter_and_admin_can_correct_registration_details(self):
+        client = APIClient(); client.force_authenticate(self.counter)
+        created = client.post("/api/registrations/", {"name":"Wrong Name", "phoneNo":"9903554681", "address":"Old address", "age":30, "gender":"MALE", "departmentId":str(self.department.id)}, format="json")
+        self.assertEqual(created.status_code, 201)
+        response = client.patch(f"/api/registrations/{created.data['id']}/", {"name":"Correct Name", "phoneNo":"9903554682", "address":"Correct address", "age":32, "gender":"FEMALE"}, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["name"], "Correct Name")
+        profile = UserProfile.objects.get(user_id=LabRegistration.objects.get(pk=created.data["id"]).patient_id)
+        self.assertEqual(profile.phone_no, "9903554682")
+        self.assertEqual(profile.age, 32)
+        self.assertEqual(profile.gender, "FEMALE")
+
+        client.force_authenticate(self.admin)
+        response = client.patch(f"/api/registrations/{created.data['id']}/", {"address":"Admin corrected address"}, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["address"], "Admin corrected address")
 
     def test_admin_generates_and_confirms_payroll(self):
         client = APIClient(); client.force_authenticate(self.admin)
@@ -64,13 +93,18 @@ class ClinicOperationsTests(TestCase):
         self.assertEqual(admin_client.patch(f"/api/free-camps/{camp_id}/", {"status":"OPEN"}, format="json").status_code, 200)
 
         counter_client = APIClient(); counter_client.force_authenticate(self.counter)
-        response = counter_client.post("/api/registrations/", {"name":"Camp Patient", "phoneNo":"9903554605", "address":"Newtown", "departmentId":str(self.department.id), "campId":camp_id, "isFreeCamp":True}, format="json")
+        response = counter_client.post("/api/registrations/", {"name":"Camp Patient", "phoneNo":"9903554605", "address":"Newtown", "age":28, "gender":"FEMALE", "departmentId":str(self.department.id), "campId":camp_id, "isFreeCamp":True}, format="json")
         self.assertEqual(response.status_code, 201)
         self.assertEqual(set(["name", "phoneNo", "patientId", "departmentName", "tokenNumber"]) - set(response.data), set())
         self.assertNotIn("roomNumber", response.data)
         self.assertNotIn("doctorName", response.data)
         camp_registration = CampRegistration.objects.get(registration_id=response.data["id"])
         self.assertEqual(camp_registration.registered_by, self.counter)
+        dashboard = admin_client.get("/api/free-camps/")
+        self.assertEqual(dashboard.status_code, 200)
+        camp_summary = next(row for row in dashboard.data if row["id"] == str(camp_id))
+        self.assertEqual(camp_summary["registrationCount"], 1)
+        self.assertEqual(camp_summary["departmentStats"], [{"departmentId": str(self.department.id), "departmentName": "Dental", "patientCount": 1}])
         self.assertEqual(counter_client.post(f"/api/registrations/{response.data['id']}/receipt-print/").status_code, 200)
         camp_registration.refresh_from_db(); self.assertEqual(camp_registration.receipt_print_count, 1)
 
@@ -96,7 +130,7 @@ class ClinicOperationsTests(TestCase):
     @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
     def test_online_registration_reuses_counter_patient_id(self):
         counter_client = APIClient(); counter_client.force_authenticate(self.counter)
-        created = counter_client.post("/api/registrations/", {"name":"Linked Patient", "phoneNo":"9903554606", "nativePlace":"Kolkata", "departmentId":str(self.department.id)}, format="json")
+        created = counter_client.post("/api/registrations/", {"name":"Linked Patient", "phoneNo":"9903554606", "address":"Kolkata", "age":40, "gender":"MALE", "departmentId":str(self.department.id)}, format="json")
         self.assertEqual(created.status_code, 201)
         patient_id = created.data["patientId"]
         response = APIClient().post("/api/auth/register-patient/", {
@@ -112,7 +146,7 @@ class ClinicOperationsTests(TestCase):
         first = User.objects.create_user(username="family-one")
         UserProfile.objects.create(user=first, role=UserRole.PATIENT, name="Family One", phone_no="9903554607", patient_id="BHCC900000001")
         client = APIClient(); client.force_authenticate(self.counter)
-        payload = {"name":"Family Two", "phoneNo":"9903554607", "nativePlace":"Kolkata", "departmentId":str(self.department.id)}
+        payload = {"name":"Family Two", "phoneNo":"9903554607", "address":"Kolkata", "age":22, "gender":"FEMALE", "departmentId":str(self.department.id)}
         self.assertEqual(client.post("/api/registrations/", payload, format="json").status_code, 409)
         payload["createSeparatePatient"] = True
         response = client.post("/api/registrations/", payload, format="json")
