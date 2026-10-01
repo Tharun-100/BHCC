@@ -52,6 +52,18 @@ class ClinicOperationsTests(TestCase):
         response = client.get(f"/api/availability/?doctor_id={self.doctor.id}&date={appointment_date.isoformat()}")
         self.assertEqual(response.data["slots"], ["10:00", "10:15"])
 
+    def test_appointment_department_tokens_increment_and_reset_daily(self):
+        client = APIClient(); client.force_authenticate(self.counter)
+        tomorrow = date.today() + timedelta(days=1)
+        base = {"patientId": str(self.patient.id), "patientName": "Patient", "doctorId": str(self.doctor.id), "doctorName": "Doctor", "department": "Dental", "fee": 500}
+        first = client.post("/api/appointments/", {**base, "date": date.today(), "time": "14:00"}, format="json")
+        second = client.post("/api/appointments/", {**base, "date": date.today(), "time": "14:15"}, format="json")
+        next_day = client.post("/api/appointments/", {**base, "date": tomorrow, "time": "14:00"}, format="json")
+        self.assertEqual((first.status_code, second.status_code, next_day.status_code), (201, 201, 201))
+        self.assertEqual(Appointment.objects.get(pk=first.data["id"]).token_number, "DEN-001")
+        self.assertEqual(Appointment.objects.get(pk=second.data["id"]).token_number, "DEN-002")
+        self.assertEqual(Appointment.objects.get(pk=next_day.data["id"]).token_number, "DEN-001")
+
     def test_counter_records_unique_manual_paytm_pos_reference(self):
         appointment = Appointment.objects.create(
             patient=self.patient, doctor=self.doctor, patient_name="Patient", doctor_name="Doctor",

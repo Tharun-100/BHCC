@@ -143,6 +143,7 @@ class AppointmentSerializer(serializers.ModelSerializer):
             "date",
             "time",
             "fee",
+            "tokenNumber",
             "status",
             "paymentId",
             "paymentStatus",
@@ -152,6 +153,7 @@ class AppointmentSerializer(serializers.ModelSerializer):
         ]
 
     paymentId = serializers.CharField(source="payment_id", allow_blank=True, required=False)
+    tokenNumber = serializers.CharField(source="token_number", read_only=True)
     paymentStatus = serializers.CharField(source="payment_status", allow_blank=True, required=False)
     paymentMethod = serializers.CharField(source="payment_method", read_only=True)
     paymentReference = serializers.CharField(source="payment_reference", read_only=True)

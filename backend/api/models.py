@@ -103,6 +103,8 @@ class Appointment(models.Model):
     date = models.DateField()
     time = models.CharField(max_length=5)
     fee = models.PositiveIntegerField(default=0)
+    department_sequence = models.PositiveIntegerField(null=True, blank=True)
+    token_number = models.CharField(max_length=30, blank=True, default="")
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.UPCOMING)
     payment_id = models.CharField(max_length=120, blank=True, default="")
 
@@ -135,6 +137,11 @@ class Appointment(models.Model):
                 fields=["payment_reference"],
                 condition=Q(payment_method="PAYTM_POS_MANUAL") & ~Q(payment_reference=""),
                 name="unique_manual_pos_reference",
+            ),
+            models.UniqueConstraint(
+                fields=["department", "date", "department_sequence"],
+                condition=Q(department_sequence__isnull=False),
+                name="unique_daily_appointment_department_token",
             ),
         ]
 

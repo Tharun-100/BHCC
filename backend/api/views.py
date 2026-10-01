@@ -56,6 +56,18 @@ WEEK_DAYS = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "
 POLICY_VERSION = "2026-08-07"
 
 
+def _next_appointment_token(department_name: str, appointment_date: date_type) -> tuple[int, str]:
+    department = Department.objects.select_for_update().filter(name__iexact=department_name).first()
+    last = Appointment.objects.filter(
+        department__iexact=department_name, date=appointment_date, department_sequence__isnull=False
+    ).order_by("-department_sequence").first()
+    sequence = (last.department_sequence if last else 0) + 1
+    prefix = (department.token_prefix if department else "") or "".join(
+        word[0] for word in department_name.split() if word
+    )[:4] or "DEPT"
+    return sequence, f"{prefix.upper()}-{sequence:03d}"
+
+
 def _record_policy_consents(request, user: User) -> None:
     for document_type in ("PRIVACY", "TERMS"):
         ConsentRecord.objects.get_or_create(
@@ -755,6 +767,7 @@ def appointments(request):
         fee = int(doctor.profile.fee or 0)
         try:
             with transaction.atomic():
+                sequence, token_number = _next_appointment_token(doctor.profile.department, ser.validated_data["date"])
                 obj = Appointment.objects.create(
                     patient=patient,
                     doctor=doctor,
@@ -764,6 +777,8 @@ def appointments(request):
                     date=ser.validated_data["date"],
                     time=ser.validated_data["time"],
                     fee=fee,
+                    department_sequence=sequence,
+                    token_number=token_number,
                     status=Appointment.Status.UPCOMING,
                     payment_id=ser.validated_data.get("payment_id", ""),
                     payment_status="Pay at Counter" if role in {UserRole.COUNTER, UserRole.ADMIN} else "Pending",
@@ -1223,7 +1238,8 @@ def registrations(request):
         )
         if camp:
             try:
-                camp_appointment = Appointment.objects.create(patient=patient, doctor=doctor, patient_name=name, doctor_name=user_to_out(doctor)["name"], department=department.name, date=camp.date, time=camp_time, fee=0, payment_status="Free Camp")
+                sequence, token_number = _next_appointment_token(department.name, camp.date)
+                camp_appointment = Appointment.objects.create(patient=patient, doctor=doctor, patient_name=name, doctor_name=user_to_out(doctor)["name"], department=department.name, date=camp.date, time=camp_time, fee=0, department_sequence=sequence, token_number=token_number, payment_status="Free Camp")
             except IntegrityError:
                 transaction.set_rollback(True)
                 return Response({"detail": "This doctor slot has already been booked. Select another time."}, status=status.HTTP_409_CONFLICT)
@@ -1765,22 +1781,27 @@ def payments_create_order(request):
         return Response({"detail": "time is required."}, status=status.HTTP_400_BAD_REQUEST)
 
     try:
-        appt = Appointment.objects.create(
-            patient=user,
-            doctor=doctor,
-            patient_name=appointment_data.get("patientName") or user_to_out(user)["name"],
-            doctor_name=appointment_data.get("doctorName") or user_to_out(doctor)["name"],
-            department=appointment_data.get("department") or "",
-            date=appt_date,
-            time=appt_time,
-            fee=fee,
-            status=Appointment.Status.UPCOMING,
-            payment_status="Pending",
-            order_id="",
-            gateway_fee=gateway_fee,
-            total_amount=final_amount,
-            total_amount_paise=final_amount * 100,
-        )
+        with transaction.atomic():
+            department_name = appointment_data.get("department") or doctor.profile.department
+            sequence, token_number = _next_appointment_token(department_name, appt_date)
+            appt = Appointment.objects.create(
+                patient=user,
+                doctor=doctor,
+                patient_name=appointment_data.get("patientName") or user_to_out(user)["name"],
+                doctor_name=appointment_data.get("doctorName") or user_to_out(doctor)["name"],
+                department=department_name,
+                date=appt_date,
+                time=appt_time,
+                fee=fee,
+                department_sequence=sequence,
+                token_number=token_number,
+                status=Appointment.Status.UPCOMING,
+                payment_status="Pending",
+                order_id="",
+                gateway_fee=gateway_fee,
+                total_amount=final_amount,
+                total_amount_paise=final_amount * 100,
+            )
     except IntegrityError:
         return Response({"detail": "This appointment slot was just booked by another patient. Please choose another available time."}, status=status.HTTP_409_CONFLICT)
 

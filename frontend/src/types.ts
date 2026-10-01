@@ -156,6 +156,7 @@ export interface Appointment {
   date: string; // Format: YYYY-MM-DD
   time: string; // Format: HH:MM
   fee: number;
+  tokenNumber?: string;
   status: 'Upcoming' | 'CheckedIn' | 'InConsultation' | 'Completed' | 'Cancelled' | 'NoShow' | 'Rescheduled';
   paymentId: string;
   paymentStatus?: string;
