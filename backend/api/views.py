@@ -1098,7 +1098,11 @@ def availability(request):
         booked_slots = set(Appointment.objects.filter(doctor=doctor, date=date_str).exclude(
             status__in=[Appointment.Status.CANCELLED, Appointment.Status.NO_SHOW, Appointment.Status.RESCHEDULED]
         ).values_list("time", flat=True))
-        response = Response({"slots": sorted(set(configured_slots) - booked_slots)})
+        available_slots = set(configured_slots) - booked_slots
+        if date_str == timezone.localdate().isoformat():
+            current_time = timezone.localtime().strftime("%H:%M")
+            available_slots = {slot for slot in available_slots if slot > current_time}
+        response = Response({"slots": sorted(available_slots)})
         response["Cache-Control"] = "no-store, no-cache, must-revalidate"
         return response
 
