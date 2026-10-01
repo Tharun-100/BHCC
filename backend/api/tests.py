@@ -36,6 +36,22 @@ class ClinicOperationsTests(TestCase):
         self.assertEqual(client.post("/api/appointments/", payload, format="json").status_code, 201)
         self.assertEqual(client.post("/api/appointments/", payload, format="json").status_code, 409)
 
+    def test_booked_slot_disappears_and_cancelled_slot_reopens(self):
+        appointment_date = date.today() + timedelta(days=1)
+        DoctorAvailability.objects.create(doctor=self.doctor, date=appointment_date, slots=["10:00", "10:15"])
+        appointment = Appointment.objects.create(
+            patient=self.patient, doctor=self.doctor, patient_name="Patient", doctor_name="Doctor",
+            department="Dental", date=appointment_date, time="10:00", fee=500,
+        )
+        client = APIClient(); client.force_authenticate(self.patient)
+        response = client.get(f"/api/availability/?doctor_id={self.doctor.id}&date={appointment_date.isoformat()}")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["slots"], ["10:15"])
+        appointment.status = Appointment.Status.CANCELLED
+        appointment.save(update_fields=["status", "updated_at"])
+        response = client.get(f"/api/availability/?doctor_id={self.doctor.id}&date={appointment_date.isoformat()}")
+        self.assertEqual(response.data["slots"], ["10:00", "10:15"])
+
     def test_counter_records_unique_manual_paytm_pos_reference(self):
         appointment = Appointment.objects.create(
             patient=self.patient, doctor=self.doctor, patient_name="Patient", doctor_name="Doctor",
@@ -67,6 +83,20 @@ class ClinicOperationsTests(TestCase):
         response = client.patch(f"/api/appointments/{appointment.id}/manual-pos-payment/", {"reference": "PAYTM-102"}, format="json")
         self.assertEqual(response.status_code, 403)
 
+    def test_counter_records_cash_payment(self):
+        appointment = Appointment.objects.create(
+            patient=self.patient, doctor=self.doctor, patient_name="Patient", doctor_name="Doctor",
+            department="Dental", date=date.today(), time="13:30", fee=500, payment_status="Pay at Counter",
+        )
+        client = APIClient(); client.force_authenticate(self.counter)
+        response = client.patch(
+            f"/api/appointments/{appointment.id}/manual-pos-payment/", {"method": "CASH"}, format="json"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["paymentMethod"], "CASH")
+        self.assertEqual(response.data["paymentStatus"], "Confirmed")
+        self.assertTrue(response.data["paymentReference"].startswith("CASH-BHCC-"))
+
     def test_counter_registration_creates_patient_id_and_daily_token(self):
         client = APIClient(); client.force_authenticate(self.counter)
         response = client.post("/api/registrations/", {"name":"Camp Patient", "phoneNo":"9903554604", "address":"Kolkata", "age":35, "gender":"MALE", "departmentId":str(self.department.id)}, format="json")
@@ -86,6 +116,10 @@ class ClinicOperationsTests(TestCase):
         self.assertTrue(lookup.data[0]["exactMatch"])
         self.assertEqual(lookup.data[0]["age"], 31)
         self.assertEqual(lookup.data[0]["gender"], "FEMALE")
+
+        search = client.get("/api/registrations/patient-lookup/?q=Existing")
+        self.assertEqual(search.status_code, 200)
+        self.assertEqual(search.data[0]["patientId"], created.data["patientId"])
 
     def test_counter_and_admin_can_correct_registration_details(self):
         client = APIClient(); client.force_authenticate(self.counter)
@@ -424,6 +458,7 @@ class AdminDashboardTests(TestCase):
             fee=750,
             status=Appointment.Status.COMPLETED,
             payment_status="Confirmed",
+            payment_method="CASH",
         )
         Appointment.objects.create(
             patient=self.patient,
@@ -444,6 +479,8 @@ class AdminDashboardTests(TestCase):
         self.assertEqual(response.data["appointmentsToday"], 1)
         self.assertEqual(response.data["activeDoctors"], 1)
         self.assertEqual(response.data["grossRevenue"], 750)
+        self.assertEqual(response.data["cashRevenue"], 750)
+        self.assertEqual(response.data["onlineRevenue"], 0)
         self.assertEqual(response.data["currentWeekAppointments"], 1)
         self.assertEqual(response.data["completedToday"], 1)
         self.assertEqual(response.data["weeklyGrowthPercent"], 0.0)
@@ -453,6 +490,26 @@ class AdminDashboardTests(TestCase):
         self.client.force_authenticate(self.patient)
         response = self.client.get("/api/admin/dashboard/")
         self.assertEqual(response.status_code, 403)
+
+    def test_admin_can_edit_patient_and_doctor_profile_details(self) -> None:
+        response = self.client.patch(
+            f"/api/management/accounts/{self.patient.id}/",
+            {"name": "Corrected Patient", "phoneNo": "9903554604", "address": "New address", "age": 42, "gender": "FEMALE"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["name"], "Corrected Patient")
+        self.assertEqual(response.data["patientProfile"]["age"], 42)
+        self.assertEqual(response.data["patientProfile"]["gender"], "FEMALE")
+
+        response = self.client.patch(
+            f"/api/management/accounts/{self.doctor.id}/",
+            {"department": "Cardiology", "specialty": "Interventional Cardiology", "fee": 900},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["department"], "Cardiology")
+        self.assertEqual(response.data["fee"], 900)
 
     def test_refresh_token_returns_a_new_access_token(self) -> None:
         refresh = RefreshToken.for_user(self.admin)

@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Calendar, Heart, Search, Users, Wallet } from 'lucide-react';
+import { Banknote, Calendar, CreditCard, Heart, Search, Users, Wallet } from 'lucide-react';
 
 import { getAdminDashboardSummary, type AdminDashboardSummary } from '../../services/clinicService';
 import { Appointment, User } from '../../types';
@@ -103,6 +103,19 @@ const AdminDashboard: React.FC<{ user: User }> = ({ user }) => {
             <p className="text-2xl font-black text-gray-900">{stat.value ?? '—'}</p>
           </div>
         ))}
+      </div>
+
+      <div className="mb-12 grid gap-6 md:grid-cols-2">
+        <div className="rounded-3xl border border-emerald-100 bg-emerald-50 p-6">
+          <div className="mb-3 flex items-center gap-3 text-emerald-700"><Banknote /><span className="font-bold">Cash collected</span></div>
+          <p className="text-3xl font-black text-gray-900">{summary ? formatCurrency(summary.cashRevenue) : '—'}</p>
+          <p className="mt-2 text-sm text-gray-600">Confirmed cash payments recorded at the counter.</p>
+        </div>
+        <div className="rounded-3xl border border-sky-100 bg-sky-50 p-6">
+          <div className="mb-3 flex items-center gap-3 text-sky-700"><CreditCard /><span className="font-bold">Online collected</span></div>
+          <p className="text-3xl font-black text-gray-900">{summary ? formatCurrency(summary.onlineRevenue) : '—'}</p>
+          <p className="mt-2 text-sm text-gray-600">Confirmed Razorpay and Paytm POS payments.</p>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">

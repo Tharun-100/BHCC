@@ -2,7 +2,7 @@ import React from 'react';
 import Link from 'next/link';
 import { Appointment, Department, FreeCamp, LabRegistration, PatientLookupResult, User } from '../../types';
 import { PlusCircle, Printer, Search, Users } from 'lucide-react';
-import { checkPaytmPosPayment, createCounterAppointment, createRegistration, getDoctorAvailability, initiatePaytmPosPayment, listAllAppointments, listDepartments, listDoctors, listFreeCamps, listRegistrations, lookupPatientsByPhone, recordManualPosPayment, recordReceiptPrint } from '../../services/clinicService';
+import { checkPaytmPosPayment, createCounterAppointment, createRegistration, getDoctorAvailability, initiatePaytmPosPayment, listAllAppointments, listDepartments, listDoctors, listFreeCamps, listRegistrations, lookupPatientsByPhone, recordCashPayment, recordManualPosPayment, recordReceiptPrint, searchExistingPatients } from '../../services/clinicService';
 import RegistrationEditor from '../../components/RegistrationEditor';
 
 const emptyForm = { name: '', phoneNo: '', address: '', age: '', gender: '', nativePlace: '', departmentId: '', campId: '', doctorId: '', time: '', existingPatientId: '', createSeparatePatient: false, isFreeCamp: true };
@@ -16,6 +16,11 @@ const CounterDashboard: React.FC<{ user: User }> = () => {
   const [appointments, setAppointments] = React.useState<Appointment[]>([]);
   const [doctors, setDoctors] = React.useState<User[]>([]);
   const [booking, setBooking] = React.useState({patientId:'', doctorId:'', date:'', time:''});
+  const [bookingDepartment, setBookingDepartment] = React.useState('');
+  const [bookingPaymentMethod, setBookingPaymentMethod] = React.useState<'CASH' | 'PAYTM_POS'>('CASH');
+  const [bookingBusy, setBookingBusy] = React.useState(false);
+  const [patientSearch, setPatientSearch] = React.useState('');
+  const [patientResults, setPatientResults] = React.useState<PatientLookupResult[]>([]);
   const [slots, setSlots] = React.useState<string[]>([]);
   const [campSlots, setCampSlots] = React.useState<string[]>([]);
   const [matches, setMatches] = React.useState<PatientLookupResult[]>([]);
@@ -87,6 +92,15 @@ const CounterDashboard: React.FC<{ user: User }> = () => {
     } catch (error: any) { setMessage(error?.message || 'Could not record the POS payment.'); }
   };
 
+  const recordCash = async (appointment: Appointment) => {
+    if (!window.confirm(`Confirm cash received from ${appointment.patientName}.\nAmount: ₹${appointment.fee.toLocaleString('en-IN')}`)) return;
+    try {
+      const updated = await recordCashPayment(appointment.id);
+      setAppointments((current) => current.map((row) => row.id === updated.id ? updated : row));
+      setMessage(`Cash payment recorded for ${updated.patientName}.`);
+    } catch (error: any) { setMessage(error?.message || 'Could not record the cash payment.'); }
+  };
+
   const runAutomaticPos = async (appointment: Appointment, checkOnly = false) => {
     try {
       const updated = checkOnly ? await checkPaytmPosPayment(appointment.id) : await initiatePaytmPosPayment(appointment.id);
@@ -95,8 +109,33 @@ const CounterDashboard: React.FC<{ user: User }> = () => {
     } catch (error: any) { setMessage(error?.message || 'Paytm POS request failed. Manual receipt entry remains available.'); }
   };
 
-  React.useEffect(() => { if (booking.doctorId && booking.date) getDoctorAvailability(booking.doctorId, booking.date).then(setSlots).catch(() => setSlots([])); else setSlots([]); }, [booking.doctorId, booking.date]);
-  const bookConsultation = async (event: React.FormEvent) => { event.preventDefault(); setMessage(''); try { await createCounterAppointment(booking); setBooking({patientId:'',doctorId:'',date:'',time:''}); await load(); setMessage('Doctor consultation booked. Collect the consultation fee through Paytm POS.'); } catch(error:any){setMessage(error?.message || 'Could not book consultation.');} };
+  React.useEffect(() => { if (!booking.doctorId || !booking.date) { setSlots([]); return; } let active=true; const refresh=()=>getDoctorAvailability(booking.doctorId,booking.date).then((rows)=>{if(active){setSlots(rows);setBooking((current)=>current.time&&!rows.includes(current.time)?{...current,time:''}:current);}}).catch(()=>null); void refresh(); const timer=window.setInterval(refresh,5000); return()=>{active=false;window.clearInterval(timer);}; }, [booking.doctorId, booking.date]);
+  React.useEffect(() => { const query=patientSearch.trim(); if(query.length<2){setPatientResults([]);return;} const timer=window.setTimeout(()=>searchExistingPatients(query).then(setPatientResults).catch(()=>setPatientResults([])),300); return()=>window.clearTimeout(timer); }, [patientSearch]);
+  const selectedBookingPatient = patientResults.find((row)=>row.userId===booking.patientId) || registrations.find((row)=>row.patientUserId===booking.patientId);
+  const selectedBookingDoctor = doctors.find((row)=>row.id===booking.doctorId);
+  const bookingDoctors = doctors.filter((row)=>!bookingDepartment||row.department===bookingDepartment);
+  const bookConsultation = async (event: React.FormEvent) => {
+    event.preventDefault(); setMessage(''); setBookingBusy(true);
+    let appointmentId = '';
+    try {
+      appointmentId = await createCounterAppointment(booking);
+    } catch(error:any) {
+      if(booking.doctorId&&booking.date)getDoctorAvailability(booking.doctorId,booking.date).then(setSlots).catch(()=>null);
+      setMessage(error?.message || 'Could not book consultation.'); setBookingBusy(false); return;
+    }
+    try {
+      if (bookingPaymentMethod === 'CASH') {
+        await recordCashPayment(appointmentId);
+        setMessage('Appointment booked and cash payment recorded successfully.');
+      } else {
+        await initiatePaytmPosPayment(appointmentId);
+        setMessage('Appointment booked and payment sent to the Paytm POS. Complete it on the machine, then check its status below.');
+      }
+    } catch(error:any) {
+      setMessage(`Appointment was booked, but payment could not be completed: ${error?.message || 'POS request failed'}. Use the payment actions below; do not book the slot again.`);
+    }
+    setBooking({patientId:'',doctorId:'',date:'',time:''}); setBookingDepartment(''); setPatientSearch(''); setPatientResults([]); await load(); setBookingBusy(false);
+  };
 
   return <><div className="no-print mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
     <div className="mb-8 flex flex-wrap items-start justify-between gap-4"><div><h1 className="text-3xl font-extrabold">Patient Registration</h1><p className="text-gray-500">Register clinic patients or free-camp patients. Registration itself has no charge.</p></div><Link href="/dashboard/payroll" className="rounded-xl bg-sky-50 px-4 py-3 font-bold text-sky-700">My Payroll</Link></div>
@@ -120,10 +159,19 @@ const CounterDashboard: React.FC<{ user: User }> = () => {
     </div>
     {receipt && <div className="mt-6 rounded-3xl border bg-white p-6"><h2 className="text-xl font-bold">Receipt ready</h2><p>{receipt.name} · {receipt.departmentName}</p><button onClick={printReceipt} className="mt-4 flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-3 font-bold text-white"><Printer />Print 3-inch receipt</button></div>}
     <section className="mt-8 overflow-hidden rounded-3xl border bg-white">
-      <form onSubmit={bookConsultation} className="grid gap-3 border-b p-6 md:grid-cols-5"><div className="md:col-span-5"><h2 className="text-xl font-bold">Book doctor at counter</h2><p className="text-sm text-gray-500">Select a registered patient and an available doctor slot. The server uses the doctor’s configured consultation fee.</p></div><select required value={booking.patientId} onChange={(e)=>setBooking({...booking,patientId:e.target.value})} className="rounded-xl border p-3"><option value="">Select patient</option>{registrations.filter((row,index,self)=>row.patientUserId&&self.findIndex(x=>x.patientUserId===row.patientUserId)===index).map(row=><option key={row.patientUserId!} value={row.patientUserId!}>{row.name} — {row.patientId}</option>)}</select><select required value={booking.doctorId} onChange={(e)=>setBooking({...booking,doctorId:e.target.value,time:''})} className="rounded-xl border p-3"><option value="">Select doctor</option>{doctors.map(row=><option key={row.id} value={row.id}>{row.name} — {row.department}</option>)}</select><input required type="date" min={new Date().toISOString().slice(0,10)} value={booking.date} onChange={(e)=>setBooking({...booking,date:e.target.value,time:''})} className="rounded-xl border p-3"/><select required value={booking.time} onChange={(e)=>setBooking({...booking,time:e.target.value})} className="rounded-xl border p-3"><option value="">Select slot</option>{slots.map(slot=><option key={slot}>{slot}</option>)}</select><button className="rounded-xl bg-slate-900 p-3 font-bold text-white">Book consultation</button></form>
-      <div className="border-b p-6"><h2 className="text-xl font-bold">Consultation payments</h2><p className="text-sm text-gray-500">After collecting payment on the physical Paytm POS machine, record its printed receipt/reference here. The website does not contact Paytm.</p></div>
+      <form onSubmit={bookConsultation} className="border-b bg-slate-50 p-6">
+        <div className="mb-6"><h2 className="text-2xl font-black">Book doctor at counter</h2><p className="text-sm text-gray-500">Follow the same booking sequence as the patient portal, then collect Cash or Online / Paytm POS payment.</p></div>
+        <div className="grid gap-5 lg:grid-cols-2">
+          <section className="rounded-2xl border bg-white p-5"><p className="mb-3 text-xs font-black uppercase tracking-wider text-sky-700">1 · Department and doctor</p><div className="grid gap-3 sm:grid-cols-2"><label className="text-sm font-bold">Department<select required value={bookingDepartment} onChange={(e)=>{setBookingDepartment(e.target.value);setBooking({...booking,doctorId:'',date:'',time:''});}} className="mt-1 w-full rounded-xl border p-3"><option value="">Select department</option>{departments.map(row=><option key={row.id} value={row.name}>{row.name}</option>)}</select></label><label className="text-sm font-bold">Doctor<select required value={booking.doctorId} onChange={(e)=>setBooking({...booking,doctorId:e.target.value,date:'',time:''})} disabled={!bookingDepartment} className="mt-1 w-full rounded-xl border p-3 disabled:bg-gray-100"><option value="">Select doctor</option>{bookingDoctors.map(row=><option key={row.id} value={row.id}>{row.name}</option>)}</select></label></div>{selectedBookingDoctor&&<p className="mt-3 rounded-xl bg-sky-50 p-3 text-sm"><b>{selectedBookingDoctor.name}</b><span className="block text-gray-600">{selectedBookingDoctor.specialty || selectedBookingDoctor.department} · Consultation ₹{(selectedBookingDoctor.fee || 0).toLocaleString('en-IN')}</span></p>}</section>
+          <section className="rounded-2xl border bg-white p-5"><p className="mb-3 text-xs font-black uppercase tracking-wider text-sky-700">2 · Date and live slot</p><div className="grid gap-3 sm:grid-cols-2"><label className="text-sm font-bold">Date<input required type="date" min={new Date().toISOString().slice(0,10)} value={booking.date} onChange={(e)=>setBooking({...booking,date:e.target.value,time:''})} disabled={!booking.doctorId} className="mt-1 w-full rounded-xl border p-3 disabled:bg-gray-100"/></label><label className="text-sm font-bold">Available slot<select required value={booking.time} onChange={(e)=>setBooking({...booking,time:e.target.value})} disabled={!booking.date||slots.length===0} className="mt-1 w-full rounded-xl border p-3 disabled:bg-gray-100"><option value="">{booking.date?(slots.length?'Select available slot':'No slots available'):'Select date first'}</option>{slots.map(slot=><option key={slot}>{slot}</option>)}</select></label></div><p className="mt-2 text-xs text-gray-500">Slots refresh automatically. A booked slot disappears and a cancelled slot reopens.</p></section>
+          <section className="rounded-2xl border bg-white p-5"><p className="mb-3 text-xs font-black uppercase tracking-wider text-sky-700">3 · Existing patient</p><div className="relative"><div className="flex items-center rounded-xl border bg-white px-3"><Search size={18} className="text-gray-400"/><input required value={patientSearch} onChange={(e)=>{setPatientSearch(e.target.value);setBooking({...booking,patientId:''});}} placeholder="Search name, mobile or BHCC ID" className="w-full p-3 outline-none"/></div>{patientResults.length>0&&!booking.patientId&&<div className="absolute z-20 mt-1 max-h-60 w-full overflow-y-auto rounded-xl border bg-white shadow-xl">{patientResults.map((row)=><button type="button" key={row.userId} onClick={()=>{setBooking({...booking,patientId:row.userId});setPatientSearch(`${row.name} — ${row.patientId}`);}} className="block w-full border-b p-3 text-left hover:bg-sky-50"><b>{row.name}</b><small className="block text-gray-500">{row.patientId} · {row.phoneNo}</small></button>)}</div>}</div>{selectedBookingPatient&&booking.patientId?<p className="mt-3 rounded-xl bg-green-50 p-3 text-sm font-bold text-green-800">Selected: {selectedBookingPatient.name} · {selectedBookingPatient.patientId}</p>:<p className="mt-2 text-xs text-gray-500">Select a result before continuing.</p>}</section>
+          <section className="rounded-2xl border bg-white p-5"><p className="mb-3 text-xs font-black uppercase tracking-wider text-sky-700">4 · Review and payment</p><div className="mb-4 grid grid-cols-2 gap-3 rounded-xl bg-gray-50 p-3 text-sm"><span className="text-gray-500">Patient</span><b className="text-right">{selectedBookingPatient?.name || '—'}</b><span className="text-gray-500">Doctor</span><b className="text-right">{selectedBookingDoctor?.name || '—'}</b><span className="text-gray-500">Date / time</span><b className="text-right">{booking.date&&booking.time?`${booking.date} · ${booking.time}`:'—'}</b><span className="text-gray-500">Amount</span><b className="text-right">₹{(selectedBookingDoctor?.fee || 0).toLocaleString('en-IN')}</b></div><div className="grid grid-cols-2 gap-3"><button type="button" onClick={()=>setBookingPaymentMethod('CASH')} className={`rounded-xl border p-3 font-bold ${bookingPaymentMethod==='CASH'?'border-emerald-600 bg-emerald-50 text-emerald-800':'bg-white'}`}>Cash</button><button type="button" onClick={()=>setBookingPaymentMethod('PAYTM_POS')} className={`rounded-xl border p-3 font-bold ${bookingPaymentMethod==='PAYTM_POS'?'border-sky-600 bg-sky-50 text-sky-800':'bg-white'}`}>Online / Paytm POS</button></div></section>
+        </div>
+        <button disabled={bookingBusy||!bookingDepartment||!booking.doctorId||!booking.date||!booking.time||!booking.patientId} className="mt-5 w-full rounded-xl bg-slate-900 p-4 text-lg font-black text-white disabled:opacity-50">{bookingBusy?'Booking and processing payment…':`Confirm booking and ${bookingPaymentMethod==='CASH'?'record cash':'send to Paytm POS'}`}</button>
+      </form>
+      <div className="border-b p-6"><h2 className="text-xl font-bold">Consultation payments</h2><p className="text-sm text-gray-500">Choose Cash or Online / Paytm for every counter payment. Only confirmed collections are included in the admin totals.</p></div>
       <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="bg-gray-50"><tr><th className="p-4">Appointment</th><th className="p-4">Doctor</th><th className="p-4">Amount</th><th className="p-4">Payment</th><th className="p-4">Action</th></tr></thead><tbody>
-        {appointments.filter((row) => row.status !== 'Cancelled').slice(0, 100).map((row) => <tr key={row.id} className="border-t"><td className="p-4"><b>{row.patientName}</b><small className="block">{row.date} · {row.time}</small></td><td className="p-4">{row.doctorName}<small className="block">{row.department}</small></td><td className="p-4 font-bold">₹{row.fee.toLocaleString('en-IN')}</td><td className="p-4">{row.paymentStatus || 'Pending'}{row.paymentReference && <small className="block font-mono">{row.paymentReference}</small>}</td><td className="p-4"><div className="flex flex-wrap gap-2">{row.paymentStatus === 'Confirmed' ? <span className="font-bold text-green-700">{row.paymentMethod === 'PAYTM_POS_MANUAL' ? 'Recorded' : row.paymentMethod === 'PAYTM_POS_AUTOMATIC' ? 'POS verified' : 'Paid online'}</span> : row.paymentMethod === 'PAYTM_POS_AUTOMATIC' ? <button type="button" onClick={() => runAutomaticPos(row, true)} className="rounded-lg bg-amber-600 px-3 py-2 font-bold text-white">Check POS status</button> : <button type="button" onClick={() => runAutomaticPos(row)} className="rounded-lg bg-sky-600 px-3 py-2 font-bold text-white">Send to Paytm POS</button>}{row.paymentStatus !== 'Confirmed' && <button type="button" onClick={() => recordPosPayment(row)} className="rounded-lg border px-3 py-2 font-bold">Manual receipt</button>}</div></td></tr>)}
+        {appointments.filter((row) => row.status !== 'Cancelled').slice(0, 100).map((row) => <tr key={row.id} className="border-t"><td className="p-4"><b>{row.patientName}</b><small className="block">{row.date} · {row.time}</small></td><td className="p-4">{row.doctorName}<small className="block">{row.department}</small></td><td className="p-4 font-bold">₹{row.fee.toLocaleString('en-IN')}</td><td className="p-4">{row.paymentStatus || 'Pending'}{row.paymentMethod && <small className="block font-bold">{row.paymentMethod === 'CASH' ? 'Cash' : 'Online / Paytm'}</small>}{row.paymentReference && <small className="block font-mono">{row.paymentReference}</small>}</td><td className="p-4"><div className="flex flex-wrap gap-2">{row.paymentStatus === 'Confirmed' ? <span className="font-bold text-green-700">Payment recorded</span> : <><button type="button" onClick={() => recordCash(row)} className="rounded-lg bg-emerald-600 px-3 py-2 font-bold text-white">Cash</button>{row.paymentMethod === 'PAYTM_POS_AUTOMATIC' ? <button type="button" onClick={() => runAutomaticPos(row, true)} className="rounded-lg bg-amber-600 px-3 py-2 font-bold text-white">Check Paytm</button> : <button type="button" onClick={() => runAutomaticPos(row)} className="rounded-lg bg-sky-600 px-3 py-2 font-bold text-white">Online / Paytm</button>}<button type="button" onClick={() => recordPosPayment(row)} className="rounded-lg border px-3 py-2 font-bold">Enter Paytm receipt</button></>}</div></td></tr>)}
         {appointments.length === 0 && <tr><td colSpan={5} className="p-8 text-gray-500">No appointments found.</td></tr>}
       </tbody></table></div>
     </section>

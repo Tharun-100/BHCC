@@ -100,6 +100,8 @@ export interface AdminDashboardSummary {
   appointmentsToday: number;
   activeDoctors: number;
   grossRevenue: number;
+  cashRevenue: number;
+  onlineRevenue: number;
   currentWeekAppointments: number;
   completedToday: number;
   weeklyGrowthPercent: number;
@@ -148,6 +150,13 @@ export const setAccountActive = async (id: string, isActive: boolean): Promise<U
   return apiFetch<User>(`/api/management/accounts/${encodeURIComponent(id)}/`, { method: 'PATCH', authToken: token, body: JSON.stringify({ isActive }) });
 };
 
+export const updateAdminAccount = async (id: string, payload: Record<string, unknown>): Promise<User> => {
+  const token = authTokenOrThrow();
+  return apiFetch<User>(`/api/management/accounts/${encodeURIComponent(id)}/`, {
+    method: 'PATCH', authToken: token, body: JSON.stringify(payload)
+  });
+};
+
 export const updateAppointmentStatus = async (appointmentId: string, status: Appointment['status']): Promise<Appointment> => {
   const token = authTokenOrThrow();
   return apiFetch<Appointment>(`/api/appointments/${encodeURIComponent(appointmentId)}/`, {
@@ -160,7 +169,14 @@ export const updateAppointmentStatus = async (appointmentId: string, status: App
 export const recordManualPosPayment = async (appointmentId: string, reference: string): Promise<Appointment> => {
   const token = authTokenOrThrow();
   return apiFetch<Appointment>(`/api/appointments/${encodeURIComponent(appointmentId)}/manual-pos-payment/`, {
-    method: 'PATCH', authToken: token, body: JSON.stringify({ reference })
+    method: 'PATCH', authToken: token, body: JSON.stringify({ method: 'PAYTM_POS_MANUAL', reference })
+  });
+};
+
+export const recordCashPayment = async (appointmentId: string): Promise<Appointment> => {
+  const token = authTokenOrThrow();
+  return apiFetch<Appointment>(`/api/appointments/${encodeURIComponent(appointmentId)}/manual-pos-payment/`, {
+    method: 'PATCH', authToken: token, body: JSON.stringify({ method: 'CASH' })
   });
 };
 
@@ -266,6 +282,7 @@ export const createFreeCamp = async (payload: {name:string; date:string; locatio
 export const updateFreeCamp = async (id:string, payload:Partial<{name:string;date:string;location:string;capacity:number|null;status:FreeCamp['status'];departmentIds:string[]}>):Promise<void> => {const token=authTokenOrThrow();await apiFetch(`/api/free-camps/${id}/`,{method:'PATCH',authToken:token,body:JSON.stringify(payload)});};
 export const deleteFreeCamp = async (id:string):Promise<void> => {const token=authTokenOrThrow();await apiFetch(`/api/free-camps/${id}/`,{method:'DELETE',authToken:token});};
 export const lookupPatientsByPhone = async(phone:string,name=''):Promise<PatientLookupResult[]>=>{const token=authTokenOrThrow();return apiFetch(`/api/registrations/patient-lookup/?phone=${encodeURIComponent(phone)}&name=${encodeURIComponent(name)}`,{method:'GET',authToken:token});};
+export const searchExistingPatients = async(query:string):Promise<PatientLookupResult[]>=>{const token=authTokenOrThrow();return apiFetch(`/api/registrations/patient-lookup/?q=${encodeURIComponent(query)}`,{method:'GET',authToken:token});};
 export const recordReceiptPrint = async(id:string):Promise<void>=>{const token=authTokenOrThrow();await apiFetch(`/api/registrations/${id}/receipt-print/`,{method:'POST',authToken:token});};
 
 export const listPayroll = async (month: string): Promise<PayrollRecord[]> => {

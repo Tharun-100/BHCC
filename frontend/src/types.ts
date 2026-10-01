@@ -100,7 +100,10 @@ export type WeeklySchedule = Partial<Record<WeekDayName, WeeklyTimeWindow[]>>;
 
 export interface PatientProfileDetails {
   address: string;
+  nativePlace?: string;
   phoneNo: string;
+  age?: number | null;
+  gender?: string;
   profession: string;
   isMarried: boolean;
   hasChildren: boolean;

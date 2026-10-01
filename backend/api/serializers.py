@@ -67,6 +67,8 @@ def user_to_out(user: User) -> dict:
             "address": profile.address,
             "nativePlace": profile.native_place,
             "phoneNo": profile.phone_no,
+            "age": profile.age,
+            "gender": profile.gender,
             "profession": profile.profession,
             "isMarried": profile.is_married,
             "hasChildren": profile.has_children,

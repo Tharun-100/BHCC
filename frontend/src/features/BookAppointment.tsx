@@ -13,7 +13,7 @@ import {
   MapPin,
   Loader2,
 } from 'lucide-react';
-import { listDepartments, listDoctorAppointmentsByDate, listDoctors } from '../services/clinicService';
+import { getDoctorAvailability, listDepartments, listDoctors } from '../services/clinicService';
 import { apiFetch } from '@/lib/api';
 import { getAccessToken } from '@/lib/storage';
 import { useAuth } from '@/providers/AuthProvider';
@@ -39,26 +39,6 @@ const getDoctorWeeklySchedule = (doctor: User): WeeklySchedule => {
   return schedule;
 };
 
-const generateSlotsFromWindows = (windows: Array<{ start: string; end: string }> = []) => {
-  const slots = new Set<string>();
-  windows.forEach((window) => {
-    const [startH, startM] = window.start.split(':').map(Number);
-    const [endH, endM] = window.end.split(':').map(Number);
-    let currentH = startH;
-    let currentM = startM;
-
-    while (currentH < endH || (currentH === endH && currentM < endM)) {
-      slots.add(`${currentH.toString().padStart(2, '0')}:${currentM.toString().padStart(2, '0')}`);
-      currentM += 15;
-      if (currentM >= 60) {
-        currentH += 1;
-        currentM = 0;
-      }
-    }
-  });
-  return Array.from(slots).sort();
-};
-
 const summarizeSchedule = (doctor: User) => {
   const schedule = getDoctorWeeklySchedule(doctor);
   return Object.entries(schedule)
@@ -82,7 +62,7 @@ const BookAppointment: React.FC = () => {
   const requestedDepartment = searchParams?.get('department')?.trim() || '';
   const hasAppliedRequestedDepartment = React.useRef(false);
 
-  const [bookedSlots, setBookedSlots] = useState<string[]>([]);
+  const [serverSlots, setServerSlots] = useState<string[]>([]);
   const [gatewayFee, setGatewayFee] = useState(0);
   const [totalAmount, setTotalAmount] = useState(0);
   const [offlinePaymentMessage, setOfflinePaymentMessage] = useState('');
@@ -229,29 +209,30 @@ const BookAppointment: React.FC = () => {
     return dates;
   }, [selectedDoc]);
 
-  const availableSlots = useMemo(() => {
-    if (!selectedDoc || !selectedDate) return [];
-    const dayName = new Date(`${selectedDate}T00:00:00`).toLocaleDateString('en-US', { weekday: 'long' }) as WeekDayName;
-    return generateSlotsFromWindows(getDoctorWeeklySchedule(selectedDoc)[dayName] || []);
-  }, [selectedDoc, selectedDate]);
-
   useEffect(() => {
     let mounted = true;
-    const loadBookedSlots = async () => {
+    const loadAvailableSlots = async () => {
       if (!selectedDoc || !selectedDate) {
-        setBookedSlots([]);
+        setServerSlots([]);
         return;
       }
-      const rows = await listDoctorAppointmentsByDate(selectedDoc.id, selectedDate);
+      const rows = await getDoctorAvailability(selectedDoc.id, selectedDate);
       if (!mounted) return;
-      setBookedSlots(rows.filter((r) => !['Cancelled', 'NoShow', 'Rescheduled'].includes(r.status)).map((r) => r.time));
+      setServerSlots(rows);
+      setSelectedSlot((current) => current && !rows.includes(current) ? '' : current);
     };
-
-    loadBookedSlots().catch(() => setBookedSlots([]));
+    void loadAvailableSlots().catch(() => setServerSlots([]));
+    const timer = window.setInterval(() => void loadAvailableSlots().catch(() => null), 5000);
+    const refresh = () => void loadAvailableSlots().catch(() => null);
+    window.addEventListener('focus', refresh);
     return () => {
       mounted = false;
+      window.clearInterval(timer);
+      window.removeEventListener('focus', refresh);
     };
   }, [selectedDoc, selectedDate]);
+
+  const availableSlots = serverSlots;
 
   const StepIndicator = () => (
     <div className="flex items-center justify-between mb-12 max-w-2xl mx-auto px-4">
@@ -394,16 +375,12 @@ const BookAppointment: React.FC = () => {
                   </h3>
                   <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
                     {availableSlots.map((slot) => {
-                      const isBooked = bookedSlots.includes(slot);
                       return (
                         <button
                           key={slot}
-                          disabled={isBooked}
                           onClick={() => setSelectedSlot(slot)}
                           className={`py-3 rounded-xl font-bold text-sm transition-all ${
-                            isBooked
-                              ? 'bg-gray-50 text-gray-300 cursor-not-allowed border-gray-50'
-                              : selectedSlot === slot
+                            selectedSlot === slot
                               ? 'bg-sky-600 text-white shadow-lg'
                               : 'bg-sky-50 text-sky-600 hover:bg-sky-100'
                           }`}
@@ -412,6 +389,7 @@ const BookAppointment: React.FC = () => {
                         </button>
                       );
                     })}
+                    {availableSlots.length === 0 && <p className="col-span-full rounded-xl bg-amber-50 p-4 text-sm font-semibold text-amber-800">No available slots remain for this date.</p>}
                   </div>
                 </div>
               )}

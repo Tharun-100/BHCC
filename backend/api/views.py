@@ -8,6 +8,7 @@ from datetime import date as date_type, timedelta
 from django.contrib.auth import authenticate, password_validation
 from django.contrib.auth.tokens import default_token_generator
 from django.core.exceptions import ValidationError
+from django.core.validators import validate_email
 from django.contrib.auth.models import User
 from django.conf import settings
 from django.db import IntegrityError, transaction
@@ -704,12 +705,13 @@ def admin_dashboard(request):
     else:
         weekly_growth = 100.0 if current_week_appointments else 0.0
 
-    collected_revenue = (
-        Appointment.objects.filter(
-            Q(payment_status__iexact="Confirmed") | Q(status=Appointment.Status.COMPLETED)
-        ).aggregate(total=Sum("fee"))["total"]
-        or 0
-    )
+    confirmed_payments = Appointment.objects.filter(payment_status__iexact="Confirmed")
+    cash_revenue = confirmed_payments.filter(payment_method="CASH").aggregate(total=Sum("fee"))["total"] or 0
+    online_revenue = confirmed_payments.filter(
+        Q(payment_method__in=["RAZORPAY", "PAYTM_POS_MANUAL", "PAYTM_POS_AUTOMATIC"])
+        | (Q(payment_method="") & ~Q(payment_id=""))
+    ).aggregate(total=Sum("fee"))["total"] or 0
+    collected_revenue = confirmed_payments.aggregate(total=Sum("fee"))["total"] or 0
     recent_appointments = Appointment.objects.select_related("patient", "doctor").order_by("-created_at")[:10]
 
     return Response(
@@ -720,6 +722,8 @@ def admin_dashboard(request):
                 role=UserRole.DOCTOR, user__is_active=True
             ).count(),
             "grossRevenue": collected_revenue,
+            "cashRevenue": cash_revenue,
+            "onlineRevenue": online_revenue,
             "currentWeekAppointments": current_week_appointments,
             "completedToday": Appointment.objects.filter(
                 date=today, status=Appointment.Status.COMPLETED
@@ -828,7 +832,7 @@ def appointment_detail(request, pk: int):
 
     if next_status == Appointment.Status.CANCELLED:
         gateway_details = appointment.gateway_details if isinstance(appointment.gateway_details, dict) else {}
-        if appointment.payment_status == "Confirmed" and appointment.payment_method == "PAYTM_POS_MANUAL":
+        if appointment.payment_status == "Confirmed" and appointment.payment_method in {"CASH", "PAYTM_POS_MANUAL", "PAYTM_POS_AUTOMATIC"}:
             appointment.payment_status = "Refund at Counter"
             update_fields.append("payment_status")
         elif appointment.payment_status == "Confirmed" and appointment.payment_id:
@@ -868,37 +872,43 @@ def appointment_detail(request, pk: int):
 @api_view(["PATCH"])
 @permission_classes([IsAuthenticated])
 def manual_pos_payment(request, pk: int):
-    """Record a payment already completed on the clinic's physical Paytm POS."""
+    """Record cash or a payment already completed on the clinic's physical Paytm POS."""
     role = getattr(getattr(request.user, "profile", None), "role", None)
     if role not in {UserRole.ADMIN, UserRole.COUNTER}:
         return Response({"detail": "Only administrators and counter staff can record POS payments."}, status=status.HTTP_403_FORBIDDEN)
 
+    payment_method = str(request.data.get("method") or "PAYTM_POS_MANUAL").strip().upper()
+    if payment_method not in {"CASH", "PAYTM_POS_MANUAL"}:
+        return Response({"detail": "Payment method must be CASH or PAYTM_POS_MANUAL."}, status=status.HTTP_400_BAD_REQUEST)
     reference = str(request.data.get("reference") or "").strip()
-    if len(reference) < 4 or len(reference) > 120:
+    if payment_method == "PAYTM_POS_MANUAL" and (len(reference) < 4 or len(reference) > 120):
         return Response({"detail": "Enter the Paytm POS receipt/reference (4-120 characters)."}, status=status.HTTP_400_BAD_REQUEST)
 
     with transaction.atomic():
         appointment = get_object_or_404(Appointment.objects.select_for_update(), pk=pk)
         if appointment.status == Appointment.Status.CANCELLED:
             return Response({"detail": "A cancelled appointment cannot be marked paid."}, status=status.HTTP_409_CONFLICT)
-        duplicate = Appointment.objects.exclude(pk=appointment.pk).filter(
-            payment_method="PAYTM_POS_MANUAL", payment_reference__iexact=reference
-        ).exists()
-        if duplicate:
-            return Response({"detail": "This Paytm POS reference has already been recorded."}, status=status.HTTP_409_CONFLICT)
+        if payment_method == "PAYTM_POS_MANUAL":
+            duplicate = Appointment.objects.exclude(pk=appointment.pk).filter(
+                payment_method="PAYTM_POS_MANUAL", payment_reference__iexact=reference
+            ).exists()
+            if duplicate:
+                return Response({"detail": "This Paytm POS reference has already been recorded."}, status=status.HTTP_409_CONFLICT)
+        else:
+            reference = reference or f"CASH-BHCC-{appointment.pk:06d}"
         appointment.payment_status = "Confirmed"
-        appointment.payment_method = "PAYTM_POS_MANUAL"
+        appointment.payment_method = payment_method
         appointment.payment_reference = reference
         appointment.payment_recorded_by = request.user
         appointment.payment_recorded_at = timezone.now()
         appointment.save(update_fields=["payment_status", "payment_method", "payment_reference", "payment_recorded_by", "payment_recorded_at", "updated_at"])
         AdminAuditLog.objects.create(
             actor=request.user,
-            action="MANUAL_POS_PAYMENT_RECORDED",
+            action="CASH_PAYMENT_RECORDED" if payment_method == "CASH" else "MANUAL_POS_PAYMENT_RECORDED",
             target_type="Appointment",
             target_id=str(appointment.pk),
-            summary=f"Recorded physical Paytm POS payment for appointment BHCC-{appointment.pk:06d}",
-            metadata={"reference": reference, "amount": appointment.fee},
+            summary=f"Recorded {'cash' if payment_method == 'CASH' else 'physical Paytm POS'} payment for appointment BHCC-{appointment.pk:06d}",
+            metadata={"method": payment_method, "reference": reference, "amount": appointment.fee},
         )
     return Response(AppointmentSerializer(appointment).data)
 
@@ -1044,8 +1054,38 @@ def availability(request):
         date_str = request.query_params.get("date")
         if not doctor_id or not date_str:
             return Response({"detail": "doctor_id and date are required."}, status=status.HTTP_400_BAD_REQUEST)
-        obj = DoctorAvailability.objects.filter(doctor_id=int(doctor_id), date=date_str).first()
-        return Response({"slots": obj.slots if obj else []})
+        doctor = get_object_or_404(User.objects.select_related("profile"), pk=int(doctor_id), profile__role=UserRole.DOCTOR, is_active=True)
+        obj = DoctorAvailability.objects.filter(doctor=doctor, date=date_str).first()
+        if obj:
+            configured_slots = list(obj.slots or [])
+        else:
+            try:
+                requested_date = date_type.fromisoformat(date_str)
+            except ValueError:
+                return Response({"detail": "Invalid date. Use YYYY-MM-DD."}, status=status.HTTP_400_BAD_REQUEST)
+            day_name = requested_date.strftime("%A")
+            schedule = doctor.profile.weekly_schedule or {
+                day: [{"start": doctor.profile.working_hours_start, "end": doctor.profile.working_hours_end}]
+                for day in doctor.profile.available_days
+            }
+            configured_slots = []
+            for window in schedule.get(day_name, []):
+                try:
+                    start_hour, start_minute = map(int, str(window["start"]).split(":"))
+                    end_hour, end_minute = map(int, str(window["end"]).split(":"))
+                except (KeyError, TypeError, ValueError):
+                    continue
+                current = start_hour * 60 + start_minute
+                end = end_hour * 60 + end_minute
+                while current < end:
+                    configured_slots.append(f"{current // 60:02d}:{current % 60:02d}")
+                    current += 15
+        booked_slots = set(Appointment.objects.filter(doctor=doctor, date=date_str).exclude(
+            status__in=[Appointment.Status.CANCELLED, Appointment.Status.NO_SHOW, Appointment.Status.RESCHEDULED]
+        ).values_list("time", flat=True))
+        response = Response({"slots": sorted(set(configured_slots) - booked_slots)})
+        response["Cache-Control"] = "no-store, no-cache, must-revalidate"
+        return response
 
     ser = AvailabilitySerializer(data=request.data)
     ser.is_valid(raise_exception=True)
@@ -1247,6 +1287,16 @@ def registration_detail(request, pk: int):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated, IsCounter])
 def patient_lookup(request):
+    query = str(request.query_params.get("q") or "").strip()
+    if query:
+        if len(query) < 2:
+            return Response({"detail": "Enter at least 2 characters to search."}, status=status.HTTP_400_BAD_REQUEST)
+        digits = "".join(ch for ch in query if ch.isdigit())
+        filters = Q(name__icontains=query) | Q(patient_id__icontains=query)
+        if digits:
+            filters |= Q(phone_no__icontains=digits[-10:])
+        rows = UserProfile.objects.filter(filters, role=UserRole.PATIENT).select_related("user").order_by("name")[:20]
+        return Response([{"userId": str(row.user_id), "patientId": row.patient_id, "name": row.name, "phoneNo": row.phone_no, "address": row.address, "age": row.age, "gender": row.gender, "nativePlace": row.native_place, "exactMatch": False} for row in rows])
     phone_no = "".join(ch for ch in str(request.query_params.get("phone") or "") if ch.isdigit())[-10:]
     if len(phone_no) != 10:
         return Response({"detail": "Enter a valid 10-digit mobile number."}, status=status.HTTP_400_BAD_REQUEST)
@@ -1538,6 +1588,8 @@ def admin_update_account(request, pk: int):
         allowed_roles = {choice for choice, _ in UserRole.choices} - {UserRole.PUBLIC}
         if next_role not in allowed_roles:
             return Response({"detail": "Invalid account role."}, status=status.HTTP_400_BAD_REQUEST)
+        if user.pk == request.user.pk and next_role != UserRole.ADMIN:
+            return Response({"detail": "You cannot remove your own administrator role."}, status=status.HTTP_400_BAD_REQUEST)
 
     notifications: list[tuple[str, str]] = []
     if "isActive" in request.data:
@@ -1556,9 +1608,70 @@ def admin_update_account(request, pk: int):
             profile.save(update_fields=["role"])
             notifications.append(("Account role changed", f"Account {user.email or user.username} changed from {previous_role} to {next_role}."))
 
+    profile = _ensure_profile(user)
+    changed_fields: list[str] = []
+    if "name" in request.data:
+        name = str(request.data.get("name") or "").strip()
+        if not name:
+            return Response({"detail": "Name cannot be empty."}, status=status.HTTP_400_BAD_REQUEST)
+        profile.name = name
+        user.first_name = name
+        user.save(update_fields=["first_name"])
+        changed_fields.append("name")
+    if "email" in request.data:
+        email = str(request.data.get("email") or "").strip().lower()
+        try:
+            validate_email(email)
+        except ValidationError:
+            return Response({"detail": "Enter a valid email address."}, status=status.HTTP_400_BAD_REQUEST)
+        if User.objects.exclude(pk=user.pk).filter(Q(email__iexact=email) | Q(username__iexact=email)).exists():
+            return Response({"detail": "That email address is already in use."}, status=status.HTTP_409_CONFLICT)
+        previous_email = user.email
+        user.email = email
+        if not user.username or user.username.lower() == (previous_email or "").lower():
+            user.username = email
+        user.save(update_fields=["email", "username"])
+        record_admin_action(request, action="PROFILE_UPDATED", target_type="USER", target_id=user.id, summary="Administrator changed the account email address.")
+
+    text_fields = {
+        "phoneNo": "phone_no", "address": "address", "nativePlace": "native_place",
+        "profession": "profession", "staffType": "staff_type", "department": "department",
+        "specialty": "specialty", "experience": "experience", "qualification": "qualification",
+        "medicalRegistrationNumber": "medical_registration_number", "registrationCouncil": "registration_council",
+    }
+    for api_field, model_field in text_fields.items():
+        if api_field in request.data:
+            setattr(profile, model_field, str(request.data.get(api_field) or "").strip())
+            changed_fields.append(model_field)
+    if "gender" in request.data:
+        gender = str(request.data.get("gender") or "").strip().upper()
+        if gender not in {"", "MALE", "FEMALE", "OTHER"}:
+            return Response({"detail": "Gender must be MALE, FEMALE, OTHER, or blank."}, status=status.HTTP_400_BAD_REQUEST)
+        profile.gender = gender
+        changed_fields.append("gender")
+    for api_field, model_field, maximum in (("age", "age", 120), ("salary", "salary", None), ("fee", "fee", None)):
+        if api_field in request.data:
+            raw_value = request.data.get(api_field)
+            if raw_value in (None, ""):
+                value = None
+            else:
+                try:
+                    value = int(raw_value)
+                except (TypeError, ValueError):
+                    return Response({"detail": f"{api_field} must be a whole number."}, status=status.HTTP_400_BAD_REQUEST)
+                if value < 0 or (maximum is not None and value > maximum):
+                    return Response({"detail": f"Enter a valid {api_field}."}, status=status.HTTP_400_BAD_REQUEST)
+            setattr(profile, model_field, value)
+            changed_fields.append(model_field)
+    if changed_fields:
+        profile.save(update_fields=sorted(set(changed_fields)))
+        summary = f"Administrator edited profile fields for {user.email or user.username}: {', '.join(sorted(set(changed_fields)))}."
+        record_admin_action(request, action="PROFILE_UPDATED", target_type="USER", target_id=user.id, summary=summary)
+
     for event, summary in notifications:
         transaction.on_commit(lambda event=event, summary=summary: send_admin_notification(event=event, summary=summary))
         record_admin_action(request, action="ACCOUNT_UPDATED", target_type="USER", target_id=user.id, summary=summary)
+    user = User.objects.select_related("profile").get(pk=user.pk)
     return Response(user_to_out(user))
 
 
@@ -1651,22 +1764,25 @@ def payments_create_order(request):
     if not appt_time:
         return Response({"detail": "time is required."}, status=status.HTTP_400_BAD_REQUEST)
 
-    appt = Appointment.objects.create(
-        patient=user,
-        doctor=doctor,
-        patient_name=appointment_data.get("patientName") or user_to_out(user)["name"],
-        doctor_name=appointment_data.get("doctorName") or user_to_out(doctor)["name"],
-        department=appointment_data.get("department") or "",
-        date=appt_date,
-        time=appt_time,
-        fee=fee,
-        status=Appointment.Status.UPCOMING,
-        payment_status="Pending",
-        order_id="",
-        gateway_fee=gateway_fee,
-        total_amount=final_amount,
-        total_amount_paise=final_amount * 100,
-    )
+    try:
+        appt = Appointment.objects.create(
+            patient=user,
+            doctor=doctor,
+            patient_name=appointment_data.get("patientName") or user_to_out(user)["name"],
+            doctor_name=appointment_data.get("doctorName") or user_to_out(doctor)["name"],
+            department=appointment_data.get("department") or "",
+            date=appt_date,
+            time=appt_time,
+            fee=fee,
+            status=Appointment.Status.UPCOMING,
+            payment_status="Pending",
+            order_id="",
+            gateway_fee=gateway_fee,
+            total_amount=final_amount,
+            total_amount_paise=final_amount * 100,
+        )
+    except IntegrityError:
+        return Response({"detail": "This appointment slot was just booked by another patient. Please choose another available time."}, status=status.HTTP_409_CONFLICT)
 
     key_id = os.getenv("RAZORPAY_KEY_ID")
     key_secret = os.getenv("RAZORPAY_KEY_SECRET")
@@ -1759,8 +1875,11 @@ def payments_verify(request):
         appt.payment_status = "Confirmed"
         appt.status = Appointment.Status.UPCOMING
         appt.payment_id = rzp_payment_id
+        appt.payment_method = "RAZORPAY"
+        appt.payment_reference = rzp_payment_id
+        appt.payment_recorded_at = timezone.now()
         appt.gateway_details = gateway_response
-        appt.save(update_fields=["payment_status", "status", "payment_id", "gateway_details", "updated_at"])
+        appt.save(update_fields=["payment_status", "status", "payment_id", "payment_method", "payment_reference", "payment_recorded_at", "gateway_details", "updated_at"])
         schedule_appointment_confirmation(appt.id)
         return Response({"status": "success", "message": "Payment verified and appointment confirmed."})
 
