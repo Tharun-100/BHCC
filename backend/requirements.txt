@@ -5,6 +5,7 @@ django-cors-headers>=4.6,<5
 psycopg[binary]>=3.2,<4
 python-dotenv>=1.0,<2
 razorpay>=1.4,<2
+paytmchecksum>=1.7,<2
 django-anymail[resend]>=13,<16
 setuptools>=70,<81
 gunicorn>=23,<24

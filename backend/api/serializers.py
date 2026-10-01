@@ -144,10 +144,16 @@ class AppointmentSerializer(serializers.ModelSerializer):
             "status",
             "paymentId",
             "paymentStatus",
+            "paymentMethod",
+            "paymentReference",
+            "paymentRecordedAt",
         ]
 
     paymentId = serializers.CharField(source="payment_id", allow_blank=True, required=False)
     paymentStatus = serializers.CharField(source="payment_status", allow_blank=True, required=False)
+    paymentMethod = serializers.CharField(source="payment_method", read_only=True)
+    paymentReference = serializers.CharField(source="payment_reference", read_only=True)
+    paymentRecordedAt = serializers.DateTimeField(source="payment_recorded_at", read_only=True, allow_null=True)
 
 
 class FeedbackOutSerializer(serializers.Serializer):
@@ -165,6 +171,7 @@ class LabRegistrationSerializer(serializers.ModelSerializer):
     phoneNo = serializers.CharField(source="phone_no", required=False)
     nativePlace = serializers.CharField(source="native_place", required=False)
     patientId = serializers.CharField(source="patient.profile.patient_id", read_only=True, allow_null=True)
+    patientUserId = serializers.CharField(source="patient_id", read_only=True, allow_null=True)
     departmentId = serializers.CharField(source="department_id", read_only=True, allow_null=True)
     departmentName = serializers.CharField(source="department.name", read_only=True, allow_null=True)
     tokenNumber = serializers.CharField(source="token_number", read_only=True)
@@ -174,7 +181,7 @@ class LabRegistrationSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = LabRegistration
-        fields = ["id", "name", "age", "gender", "phoneNo", "address", "nativePlace", "patientId", "departmentId", "departmentName", "tokenNumber", "isFreeCamp", "campId", "campName", "fee", "time", "createdAt"]
+        fields = ["id", "name", "age", "gender", "phoneNo", "address", "nativePlace", "patientId", "patientUserId", "departmentId", "departmentName", "tokenNumber", "isFreeCamp", "campId", "campName", "fee", "time", "createdAt"]
 
     def get_time(self, obj: LabRegistration) -> str:
         return obj.created_at.astimezone().strftime("%I:%M %p")

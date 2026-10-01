@@ -1,10 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Department } from '../../types';
+import { DentalProcedure, Department } from '../../types';
 import {
   createDepartment,
+  createDentalProcedure,
   deleteDepartmentById,
   listDepartments,
+  listDentalProcedures,
   updateDepartment,
+  updateDentalProcedure,
 } from '../../services/clinicService';
 import { PlusCircle, Pencil, Trash2 } from 'lucide-react';
 
@@ -23,6 +26,8 @@ const AdminDepartments: React.FC = () => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [error, setError] = useState<string | null>(null);
+  const [procedures,setProcedures]=useState<DentalProcedure[]>([]);
+  const [procedureForm,setProcedureForm]=useState({name:'',description:'',charge:''});
 
   const isEdit = useMemo(() => !!editingId, [editingId]);
 
@@ -33,7 +38,10 @@ const AdminDepartments: React.FC = () => {
 
   useEffect(() => {
     loadRows().catch(() => setRows([]));
+    listDentalProcedures().then(setProcedures).catch(()=>setProcedures([]));
   }, []);
+
+  const addProcedure=async(e:React.FormEvent)=>{e.preventDefault();const charge=Number(procedureForm.charge);if(!procedureForm.name.trim()||!Number.isInteger(charge)||charge<=0){setError('Procedure name and positive whole-number charge are required.');return;}await createDentalProcedure({name:procedureForm.name.trim(),description:procedureForm.description.trim(),charge});setProcedureForm({name:'',description:'',charge:''});setProcedures(await listDentalProcedures());};
 
   const resetForm = () => {
     setEditingId(null);
@@ -216,6 +224,7 @@ const AdminDepartments: React.FC = () => {
           </div>
         </div>
       </div>
+      <section className="mt-10 rounded-3xl border bg-white p-6"><h2 className="text-xl font-bold">Dental procedures and charges</h2><p className="mb-4 text-sm text-gray-500">Doctors can select only active procedures from this approved catalog.</p><form onSubmit={addProcedure} className="grid gap-3 md:grid-cols-4"><input required placeholder="Procedure name" value={procedureForm.name} onChange={e=>setProcedureForm({...procedureForm,name:e.target.value})} className="rounded-xl border p-3"/><input placeholder="Description" value={procedureForm.description} onChange={e=>setProcedureForm({...procedureForm,description:e.target.value})} className="rounded-xl border p-3"/><input required type="number" min="1" placeholder="Charge" value={procedureForm.charge} onChange={e=>setProcedureForm({...procedureForm,charge:e.target.value})} className="rounded-xl border p-3"/><button className="rounded-xl bg-sky-600 p-3 font-bold text-white">Add procedure</button></form><div className="mt-5 divide-y">{procedures.map(row=><div key={row.id} className="flex items-center justify-between py-3"><div><b>{row.name}</b><p className="text-sm text-gray-500">₹{row.charge} · {row.isActive?'Active':'Inactive'}</p></div><button type="button" onClick={async()=>{await updateDentalProcedure(row.id,{isActive:!row.isActive});setProcedures(await listDentalProcedures());}} className="rounded-lg border px-3 py-2 font-bold">{row.isActive?'Deactivate':'Activate'}</button></div>)}</div></section>
     </div>
   );
 };

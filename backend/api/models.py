@@ -76,6 +76,15 @@ class Department(models.Model):
         return self.name
 
 
+class DentalProcedure(models.Model):
+    name = models.CharField(max_length=160, unique=True)
+    description = models.TextField(blank=True, default="")
+    charge = models.PositiveIntegerField()
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+
 class Appointment(models.Model):
     class Status(models.TextChoices):
         UPCOMING = "Upcoming", "Booked"
@@ -98,6 +107,12 @@ class Appointment(models.Model):
     payment_id = models.CharField(max_length=120, blank=True, default="")
 
     payment_status = models.CharField(max_length=20, blank=True, default="Pending")
+    payment_method = models.CharField(max_length=30, blank=True, default="")
+    payment_reference = models.CharField(max_length=120, blank=True, default="")
+    payment_recorded_by = models.ForeignKey(
+        User, on_delete=models.PROTECT, null=True, blank=True, related_name="recorded_appointment_payments"
+    )
+    payment_recorded_at = models.DateTimeField(null=True, blank=True)
     order_id = models.CharField(max_length=120, blank=True, default="")
     gateway_order_id = models.CharField(max_length=120, blank=True, default="")
     gateway_fee = models.PositiveIntegerField(default=0)
@@ -115,8 +130,25 @@ class Appointment(models.Model):
                 fields=["doctor", "date", "time"],
                 condition=~Q(status__in=["Cancelled", "NoShow", "Rescheduled"]),
                 name="unique_active_doctor_slot",
-            )
+            ),
+            models.UniqueConstraint(
+                fields=["payment_reference"],
+                condition=Q(payment_method="PAYTM_POS_MANUAL") & ~Q(payment_reference=""),
+                name="unique_manual_pos_reference",
+            ),
         ]
+
+
+class AppointmentProcedure(models.Model):
+    appointment = models.ForeignKey(Appointment, on_delete=models.PROTECT, related_name="procedure_charges")
+    procedure = models.ForeignKey(DentalProcedure, on_delete=models.PROTECT, related_name="appointment_charges")
+    name = models.CharField(max_length=160)
+    charge = models.PositiveIntegerField()
+    added_by = models.ForeignKey(User, on_delete=models.PROTECT, related_name="added_appointment_procedures")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["appointment", "procedure"], name="unique_appointment_procedure")]
 
 
 class Feedback(models.Model):
@@ -173,6 +205,8 @@ class CampRegistration(models.Model):
     camp = models.ForeignKey(FreeCamp, on_delete=models.PROTECT, related_name="registrations")
     registration = models.OneToOneField(LabRegistration, on_delete=models.PROTECT, related_name="camp_registration")
     registered_by = models.ForeignKey(User, on_delete=models.PROTECT, null=True, blank=True, related_name="camp_patient_registrations")
+    doctor = models.ForeignKey(User, on_delete=models.PROTECT, null=True, blank=True, related_name="camp_patient_registrations_as_doctor")
+    appointment = models.OneToOneField(Appointment, on_delete=models.PROTECT, null=True, blank=True, related_name="camp_registration")
     receipt_print_count = models.PositiveIntegerField(default=0)
     attended = models.BooleanField(default=False)
     consultation_completed = models.BooleanField(default=False)

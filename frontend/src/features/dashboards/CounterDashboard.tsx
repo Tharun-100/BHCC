@@ -1,11 +1,11 @@
 import React from 'react';
 import Link from 'next/link';
-import { Department, FreeCamp, LabRegistration, PatientLookupResult, User } from '../../types';
+import { Appointment, Department, FreeCamp, LabRegistration, PatientLookupResult, User } from '../../types';
 import { PlusCircle, Printer, Search, Users } from 'lucide-react';
-import { createRegistration, listDepartments, listFreeCamps, listRegistrations, lookupPatientsByPhone, recordReceiptPrint } from '../../services/clinicService';
+import { checkPaytmPosPayment, createCounterAppointment, createRegistration, getDoctorAvailability, initiatePaytmPosPayment, listAllAppointments, listDepartments, listDoctors, listFreeCamps, listRegistrations, lookupPatientsByPhone, recordManualPosPayment, recordReceiptPrint } from '../../services/clinicService';
 import RegistrationEditor from '../../components/RegistrationEditor';
 
-const emptyForm = { name: '', phoneNo: '', address: '', age: '', gender: '', nativePlace: '', departmentId: '', campId: '', existingPatientId: '', createSeparatePatient: false, isFreeCamp: true };
+const emptyForm = { name: '', phoneNo: '', address: '', age: '', gender: '', nativePlace: '', departmentId: '', campId: '', doctorId: '', time: '', existingPatientId: '', createSeparatePatient: false, isFreeCamp: true };
 const escapeReceiptValue = (value: unknown) => String(value ?? '').replace(/[&<>'"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[character] || character);
 const Required = ({ children }: { children: React.ReactNode }) => <>{children} <span className="text-red-600">*</span></>;
 
@@ -13,6 +13,11 @@ const CounterDashboard: React.FC<{ user: User }> = () => {
   const [registrations, setRegistrations] = React.useState<LabRegistration[]>([]);
   const [camps, setCamps] = React.useState<FreeCamp[]>([]);
   const [departments, setDepartments] = React.useState<Department[]>([]);
+  const [appointments, setAppointments] = React.useState<Appointment[]>([]);
+  const [doctors, setDoctors] = React.useState<User[]>([]);
+  const [booking, setBooking] = React.useState({patientId:'', doctorId:'', date:'', time:''});
+  const [slots, setSlots] = React.useState<string[]>([]);
+  const [campSlots, setCampSlots] = React.useState<string[]>([]);
   const [matches, setMatches] = React.useState<PatientLookupResult[]>([]);
   const [form, setForm] = React.useState(emptyForm);
   const [receipt, setReceipt] = React.useState<LabRegistration | null>(null);
@@ -20,12 +25,14 @@ const CounterDashboard: React.FC<{ user: User }> = () => {
   const [message, setMessage] = React.useState('');
   const [saving, setSaving] = React.useState(false);
 
-  const load = () => Promise.all([listRegistrations(), listFreeCamps(), listDepartments()]).then(([rows, campRows, departmentRows]) => {
-    setRegistrations(rows); setCamps(campRows.filter((camp) => camp.isActive && camp.status === 'OPEN')); setDepartments(departmentRows);
+  const load = () => Promise.all([listRegistrations(), listFreeCamps(), listDepartments(), listAllAppointments(), listDoctors()]).then(([rows, campRows, departmentRows, appointmentRows, doctorRows]) => {
+    setRegistrations(rows); setCamps(campRows.filter((camp) => camp.isActive && camp.status === 'OPEN')); setDepartments(departmentRows); setAppointments(appointmentRows); setDoctors(doctorRows);
   });
   React.useEffect(() => { load().catch(() => setMessage('Unable to load counter registration data.')); }, []);
   const camp = camps.find((row) => row.id === form.campId);
   const availableDepartments = form.isFreeCamp ? (camp?.departments || []) : departments;
+  const campDoctors = doctors.filter((doctor) => doctor.department === availableDepartments.find((department) => department.id === form.departmentId)?.name);
+  React.useEffect(() => { if (form.isFreeCamp && form.doctorId && camp?.date) getDoctorAvailability(form.doctorId, camp.date).then(setCampSlots).catch(() => setCampSlots([])); else setCampSlots([]); }, [form.isFreeCamp, form.doctorId, camp?.date]);
 
   const lookup = async () => {
     setMessage(''); setMatches([]);
@@ -69,6 +76,28 @@ const CounterDashboard: React.FC<{ user: User }> = () => {
     void recordReceiptPrint(receipt.id).catch(() => setMessage('Receipt opened, but its print audit could not be recorded.'));
   };
 
+  const recordPosPayment = async (appointment: Appointment) => {
+    const reference = window.prompt(`Enter the Paytm POS receipt/reference for ${appointment.patientName}.\nAmount: ₹${appointment.fee}`, appointment.paymentReference || '');
+    if (reference === null) return;
+    if (reference.trim().length < 4) { setMessage('Enter a valid Paytm POS receipt/reference.'); return; }
+    try {
+      const updated = await recordManualPosPayment(appointment.id, reference.trim());
+      setAppointments((current) => current.map((row) => row.id === updated.id ? updated : row));
+      setMessage(`Payment recorded for ${updated.patientName}. Reference: ${updated.paymentReference}`);
+    } catch (error: any) { setMessage(error?.message || 'Could not record the POS payment.'); }
+  };
+
+  const runAutomaticPos = async (appointment: Appointment, checkOnly = false) => {
+    try {
+      const updated = checkOnly ? await checkPaytmPosPayment(appointment.id) : await initiatePaytmPosPayment(appointment.id);
+      setAppointments((current) => current.map((row) => row.id === updated.id ? updated : row));
+      setMessage(checkOnly ? `Paytm status: ${updated.paymentStatus}` : 'Payment sent to the Paytm POS. Complete it on the machine, then check status.');
+    } catch (error: any) { setMessage(error?.message || 'Paytm POS request failed. Manual receipt entry remains available.'); }
+  };
+
+  React.useEffect(() => { if (booking.doctorId && booking.date) getDoctorAvailability(booking.doctorId, booking.date).then(setSlots).catch(() => setSlots([])); else setSlots([]); }, [booking.doctorId, booking.date]);
+  const bookConsultation = async (event: React.FormEvent) => { event.preventDefault(); setMessage(''); try { await createCounterAppointment(booking); setBooking({patientId:'',doctorId:'',date:'',time:''}); await load(); setMessage('Doctor consultation booked. Collect the consultation fee through Paytm POS.'); } catch(error:any){setMessage(error?.message || 'Could not book consultation.');} };
+
   return <><div className="no-print mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
     <div className="mb-8 flex flex-wrap items-start justify-between gap-4"><div><h1 className="text-3xl font-extrabold">Patient Registration</h1><p className="text-gray-500">Register free-camp and general ₹150 service patients.</p></div><Link href="/dashboard/payroll" className="rounded-xl bg-sky-50 px-4 py-3 font-bold text-sky-700">My Payroll</Link></div>
     <div className="grid gap-8 lg:grid-cols-[430px_1fr]">
@@ -82,13 +111,22 @@ const CounterDashboard: React.FC<{ user: User }> = () => {
         <label className="block text-sm font-bold"><Required>Address</Required><textarea required value={form.address} onChange={(event) => setForm({ ...form, address: event.target.value })} className="mt-1 w-full rounded-xl border p-3" /></label>
         <div className="grid grid-cols-2 gap-3"><label className="text-sm font-bold"><Required>Age</Required><input required type="number" min="0" max="120" value={form.age} onChange={(event) => setForm({ ...form, age: event.target.value })} className="mt-1 w-full rounded-xl border p-3" /></label><label className="text-sm font-bold"><Required>Gender</Required><select required value={form.gender} onChange={(event) => setForm({ ...form, gender: event.target.value })} className="mt-1 w-full rounded-xl border p-3"><option value="">Select</option><option value="MALE">Male</option><option value="FEMALE">Female</option><option value="OTHER">Other</option></select></label></div>
         <label className="block text-sm font-bold">Native place <span className="font-normal text-gray-500">(optional)</span><input value={form.nativePlace} onChange={(event) => setForm({ ...form, nativePlace: event.target.value })} className="mt-1 w-full rounded-xl border p-3" /></label>
-        <label className="block text-sm font-bold"><Required>Department</Required><select required value={form.departmentId} onChange={(event) => setForm({ ...form, departmentId: event.target.value })} disabled={form.isFreeCamp && !camp} className="mt-1 w-full rounded-xl border p-3 disabled:bg-gray-100"><option value="">Select department</option>{availableDepartments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}</select></label>
+        <label className="block text-sm font-bold"><Required>Department</Required><select required value={form.departmentId} onChange={(event) => setForm({ ...form, departmentId: event.target.value, doctorId:'', time:'' })} disabled={form.isFreeCamp && !camp} className="mt-1 w-full rounded-xl border p-3 disabled:bg-gray-100"><option value="">Select department</option>{availableDepartments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}</select></label>
+        {form.isFreeCamp && <><label className="block text-sm font-bold"><Required>Doctor</Required><select required value={form.doctorId} onChange={(event)=>setForm({...form,doctorId:event.target.value,time:''})} className="mt-1 w-full rounded-xl border p-3"><option value="">Select camp doctor</option>{campDoctors.map(doctor=><option key={doctor.id} value={doctor.id}>{doctor.name}</option>)}</select></label><label className="block text-sm font-bold"><Required>Appointment time</Required><select required value={form.time} onChange={(event)=>setForm({...form,time:event.target.value})} className="mt-1 w-full rounded-xl border p-3"><option value="">Select available slot</option>{campSlots.map(slot=><option key={slot}>{slot}</option>)}</select></label></>}
         {message && <p className="rounded-xl bg-sky-50 p-3 text-sm text-sky-800">{message}</p>}
         <button disabled={saving || !form.departmentId} className="w-full rounded-xl bg-sky-600 py-4 font-bold text-white disabled:opacity-60">{saving ? 'Registering...' : 'Register patient'}</button>
       </form>
       <div className="overflow-hidden rounded-3xl border bg-white"><div className="flex items-center gap-3 border-b p-6"><Users className="text-sky-600" /><h2 className="font-bold">Recent registrations</h2></div><div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="bg-gray-50"><tr><th className="p-4">Patient</th><th className="p-4">Type</th><th className="p-4">Department</th><th className="p-4">Token</th><th className="p-4"></th></tr></thead><tbody>{registrations.map((row) => <React.Fragment key={row.id}><tr className="border-t"><td className="p-4 font-bold">{row.name}<small className="block font-normal">{row.phoneNo} · Age {row.age} · {row.gender}</small><small className="block font-normal">{row.patientId}</small></td><td className="p-4">{row.isFreeCamp ? 'Free camp' : 'General ₹150'}</td><td className="p-4">{row.departmentName}</td><td className="p-4 font-bold text-sky-700">{row.tokenNumber}</td><td className="p-4"><div className="flex gap-3"><button onClick={() => setEditingId(row.id)} className="font-bold text-sky-700">Edit</button>{row.isFreeCamp && <button onClick={() => setReceipt(row)} className="font-bold text-sky-700">Receipt</button>}</div></td></tr>{editingId === row.id && <tr><td colSpan={5} className="p-3"><RegistrationEditor registration={row} departments={row.isFreeCamp ? (camps.find((item) => item.id === row.campId)?.departments || departments) : departments} onCancel={() => setEditingId(null)} onSaved={(updated) => { setRegistrations((current) => current.map((item) => item.id === updated.id ? updated : item)); setEditingId(null); setMessage('Patient details updated successfully.'); }} /></td></tr>}</React.Fragment>)}</tbody></table></div></div>
     </div>
     {receipt && <div className="mt-6 rounded-3xl border bg-white p-6"><h2 className="text-xl font-bold">Receipt ready</h2><p>{receipt.name} · {receipt.departmentName}</p><button onClick={printReceipt} className="mt-4 flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-3 font-bold text-white"><Printer />Print 3-inch receipt</button></div>}
+    <section className="mt-8 overflow-hidden rounded-3xl border bg-white">
+      <form onSubmit={bookConsultation} className="grid gap-3 border-b p-6 md:grid-cols-5"><div className="md:col-span-5"><h2 className="text-xl font-bold">Book doctor at counter</h2><p className="text-sm text-gray-500">Select a registered patient and an available doctor slot. The server uses the doctor’s configured consultation fee.</p></div><select required value={booking.patientId} onChange={(e)=>setBooking({...booking,patientId:e.target.value})} className="rounded-xl border p-3"><option value="">Select patient</option>{registrations.filter((row,index,self)=>row.patientUserId&&self.findIndex(x=>x.patientUserId===row.patientUserId)===index).map(row=><option key={row.patientUserId!} value={row.patientUserId!}>{row.name} — {row.patientId}</option>)}</select><select required value={booking.doctorId} onChange={(e)=>setBooking({...booking,doctorId:e.target.value,time:''})} className="rounded-xl border p-3"><option value="">Select doctor</option>{doctors.map(row=><option key={row.id} value={row.id}>{row.name} — {row.department}</option>)}</select><input required type="date" min={new Date().toISOString().slice(0,10)} value={booking.date} onChange={(e)=>setBooking({...booking,date:e.target.value,time:''})} className="rounded-xl border p-3"/><select required value={booking.time} onChange={(e)=>setBooking({...booking,time:e.target.value})} className="rounded-xl border p-3"><option value="">Select slot</option>{slots.map(slot=><option key={slot}>{slot}</option>)}</select><button className="rounded-xl bg-slate-900 p-3 font-bold text-white">Book consultation</button></form>
+      <div className="border-b p-6"><h2 className="text-xl font-bold">Consultation payments</h2><p className="text-sm text-gray-500">After collecting payment on the physical Paytm POS machine, record its printed receipt/reference here. The website does not contact Paytm.</p></div>
+      <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="bg-gray-50"><tr><th className="p-4">Appointment</th><th className="p-4">Doctor</th><th className="p-4">Amount</th><th className="p-4">Payment</th><th className="p-4">Action</th></tr></thead><tbody>
+        {appointments.filter((row) => row.status !== 'Cancelled').slice(0, 100).map((row) => <tr key={row.id} className="border-t"><td className="p-4"><b>{row.patientName}</b><small className="block">{row.date} · {row.time}</small></td><td className="p-4">{row.doctorName}<small className="block">{row.department}</small></td><td className="p-4 font-bold">₹{row.fee.toLocaleString('en-IN')}</td><td className="p-4">{row.paymentStatus || 'Pending'}{row.paymentReference && <small className="block font-mono">{row.paymentReference}</small>}</td><td className="p-4"><div className="flex flex-wrap gap-2">{row.paymentStatus === 'Confirmed' ? <span className="font-bold text-green-700">{row.paymentMethod === 'PAYTM_POS_MANUAL' ? 'Recorded' : row.paymentMethod === 'PAYTM_POS_AUTOMATIC' ? 'POS verified' : 'Paid online'}</span> : row.paymentMethod === 'PAYTM_POS_AUTOMATIC' ? <button type="button" onClick={() => runAutomaticPos(row, true)} className="rounded-lg bg-amber-600 px-3 py-2 font-bold text-white">Check POS status</button> : <button type="button" onClick={() => runAutomaticPos(row)} className="rounded-lg bg-sky-600 px-3 py-2 font-bold text-white">Send to Paytm POS</button>}{row.paymentStatus !== 'Confirmed' && <button type="button" onClick={() => recordPosPayment(row)} className="rounded-lg border px-3 py-2 font-bold">Manual receipt</button>}</div></td></tr>)}
+        {appointments.length === 0 && <tr><td colSpan={5} className="p-8 text-gray-500">No appointments found.</td></tr>}
+      </tbody></table></div>
+    </section>
   </div></>;
 };
 

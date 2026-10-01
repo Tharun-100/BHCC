@@ -1,6 +1,6 @@
 import { apiFetch } from '@/lib/api';
 import { getAccessToken } from '@/lib/storage';
-import { Appointment, Department, Feedback, FreeCamp, LabRegistration, PatientLookupResult, PayrollRecord, User, WeeklySchedule } from '@/types';
+import { Appointment, DentalProcedure, Department, Feedback, FreeCamp, LabRegistration, PatientLookupResult, PayrollRecord, User, WeeklySchedule } from '@/types';
 
 type NewAppointmentInput = Omit<Appointment, 'id' | 'status' | 'paymentId'> & {
   status?: Appointment['status'];
@@ -65,6 +65,12 @@ export const createAppointment = async (payload: NewAppointmentInput): Promise<s
     authToken: token,
     body: JSON.stringify(payload)
   });
+  return created.id;
+};
+
+export const createCounterAppointment = async (payload: {patientId:string; doctorId:string; date:string; time:string}): Promise<string> => {
+  const token = authTokenOrThrow();
+  const created = await apiFetch<{id:string}>('/api/appointments/', { method:'POST', authToken:token, body:JSON.stringify({...payload, patientName:'Counter booking', doctorName:'Doctor', department:'', fee:0}) });
   return created.id;
 };
 
@@ -150,6 +156,29 @@ export const updateAppointmentStatus = async (appointmentId: string, status: App
     body: JSON.stringify({ status })
   });
 };
+
+export const recordManualPosPayment = async (appointmentId: string, reference: string): Promise<Appointment> => {
+  const token = authTokenOrThrow();
+  return apiFetch<Appointment>(`/api/appointments/${encodeURIComponent(appointmentId)}/manual-pos-payment/`, {
+    method: 'PATCH', authToken: token, body: JSON.stringify({ reference })
+  });
+};
+
+export const initiatePaytmPosPayment = async (appointmentId: string): Promise<Appointment> => {
+  const token = authTokenOrThrow();
+  return apiFetch<Appointment>(`/api/appointments/${encodeURIComponent(appointmentId)}/paytm-pos/initiate/`, { method: 'POST', authToken: token });
+};
+
+export const checkPaytmPosPayment = async (appointmentId: string): Promise<Appointment> => {
+  const token = authTokenOrThrow();
+  return apiFetch<Appointment>(`/api/appointments/${encodeURIComponent(appointmentId)}/paytm-pos/status/`, { method: 'POST', authToken: token });
+};
+
+export const listDentalProcedures = async ():Promise<DentalProcedure[]> => {const token=authTokenOrThrow();return apiFetch('/api/dental-procedures/',{method:'GET',authToken:token});};
+export const createDentalProcedure = async(payload:{name:string;description:string;charge:number}):Promise<DentalProcedure>=>{const token=authTokenOrThrow();return apiFetch('/api/dental-procedures/',{method:'POST',authToken:token,body:JSON.stringify(payload)});};
+export const updateDentalProcedure = async(id:string,payload:Partial<DentalProcedure>):Promise<DentalProcedure>=>{const token=authTokenOrThrow();return apiFetch(`/api/dental-procedures/${id}/`,{method:'PATCH',authToken:token,body:JSON.stringify(payload)});};
+export const getAppointmentProcedures = async(id:string):Promise<{appointmentId:string;total:number;items:Array<{procedureId:string;name:string;charge:number}>}>=>{const token=authTokenOrThrow();return apiFetch(`/api/appointments/${id}/procedures/`,{method:'GET',authToken:token});};
+export const saveAppointmentProcedures = async(id:string,procedureIds:string[]):Promise<{total:number;items:Array<{procedureId:string;name:string;charge:number}>}>=>{const token=authTokenOrThrow();return apiFetch(`/api/appointments/${id}/procedures/`,{method:'PUT',authToken:token,body:JSON.stringify({procedureIds})});};
 
 export const listDoctorAppointmentsByDate = async (doctorId: string, date: string): Promise<Appointment[]> => {
   const token = authTokenOrThrow();

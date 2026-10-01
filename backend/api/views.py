@@ -738,25 +738,31 @@ def appointments(request):
     role = getattr(getattr(user, "profile", None), "role", None)
 
     if request.method == "POST":
-        if role != UserRole.PATIENT:
-            return Response({"detail": "Only patients can create appointments."}, status=status.HTTP_403_FORBIDDEN)
+        if role not in {UserRole.PATIENT, UserRole.COUNTER, UserRole.ADMIN}:
+            return Response({"detail": "Only patients, counter staff and administrators can create appointments."}, status=status.HTTP_403_FORBIDDEN)
         ser = AppointmentSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
         doctor_id = int(ser.validated_data["doctor_id"])
-        doctor = User.objects.get(pk=doctor_id)
+        doctor = get_object_or_404(User.objects.select_related("profile"), pk=doctor_id, profile__role=UserRole.DOCTOR, is_active=True)
+        patient = user
+        if role in {UserRole.COUNTER, UserRole.ADMIN}:
+            patient = get_object_or_404(User.objects.select_related("profile"), pk=request.data.get("patientId"), profile__role=UserRole.PATIENT)
+        doctor_out = user_to_out(doctor)
+        fee = int(doctor.profile.fee or 0)
         try:
             with transaction.atomic():
                 obj = Appointment.objects.create(
-                    patient=user,
+                    patient=patient,
                     doctor=doctor,
-                    patient_name=ser.validated_data.get("patient_name", user_to_out(user)["name"]),
-                    doctor_name=ser.validated_data.get("doctor_name", user_to_out(doctor)["name"]),
-                    department=ser.validated_data.get("department", ""),
+                    patient_name=user_to_out(patient)["name"],
+                    doctor_name=doctor_out["name"],
+                    department=doctor.profile.department,
                     date=ser.validated_data["date"],
                     time=ser.validated_data["time"],
-                    fee=ser.validated_data.get("fee", 0),
+                    fee=fee,
                     status=Appointment.Status.UPCOMING,
                     payment_id=ser.validated_data.get("payment_id", ""),
+                    payment_status="Pay at Counter" if role in {UserRole.COUNTER, UserRole.ADMIN} else "Pending",
                 )
         except IntegrityError:
             return Response({"detail": "This doctor appointment slot has already been booked. Please select another time."}, status=status.HTTP_409_CONFLICT)
@@ -822,7 +828,10 @@ def appointment_detail(request, pk: int):
 
     if next_status == Appointment.Status.CANCELLED:
         gateway_details = appointment.gateway_details if isinstance(appointment.gateway_details, dict) else {}
-        if appointment.payment_status == "Confirmed" and appointment.payment_id:
+        if appointment.payment_status == "Confirmed" and appointment.payment_method == "PAYTM_POS_MANUAL":
+            appointment.payment_status = "Refund at Counter"
+            update_fields.append("payment_status")
+        elif appointment.payment_status == "Confirmed" and appointment.payment_id:
             key_id = os.getenv("RAZORPAY_KEY_ID")
             key_secret = os.getenv("RAZORPAY_KEY_SECRET")
             refund_amount = appointment.total_amount_paise or (appointment.fee * 100)
@@ -854,6 +863,177 @@ def appointment_detail(request, pk: int):
 
     appointment.save(update_fields=update_fields)
     return Response(AppointmentSerializer(appointment).data)
+
+
+@api_view(["PATCH"])
+@permission_classes([IsAuthenticated])
+def manual_pos_payment(request, pk: int):
+    """Record a payment already completed on the clinic's physical Paytm POS."""
+    role = getattr(getattr(request.user, "profile", None), "role", None)
+    if role not in {UserRole.ADMIN, UserRole.COUNTER}:
+        return Response({"detail": "Only administrators and counter staff can record POS payments."}, status=status.HTTP_403_FORBIDDEN)
+
+    reference = str(request.data.get("reference") or "").strip()
+    if len(reference) < 4 or len(reference) > 120:
+        return Response({"detail": "Enter the Paytm POS receipt/reference (4-120 characters)."}, status=status.HTTP_400_BAD_REQUEST)
+
+    with transaction.atomic():
+        appointment = get_object_or_404(Appointment.objects.select_for_update(), pk=pk)
+        if appointment.status == Appointment.Status.CANCELLED:
+            return Response({"detail": "A cancelled appointment cannot be marked paid."}, status=status.HTTP_409_CONFLICT)
+        duplicate = Appointment.objects.exclude(pk=appointment.pk).filter(
+            payment_method="PAYTM_POS_MANUAL", payment_reference__iexact=reference
+        ).exists()
+        if duplicate:
+            return Response({"detail": "This Paytm POS reference has already been recorded."}, status=status.HTTP_409_CONFLICT)
+        appointment.payment_status = "Confirmed"
+        appointment.payment_method = "PAYTM_POS_MANUAL"
+        appointment.payment_reference = reference
+        appointment.payment_recorded_by = request.user
+        appointment.payment_recorded_at = timezone.now()
+        appointment.save(update_fields=["payment_status", "payment_method", "payment_reference", "payment_recorded_by", "payment_recorded_at", "updated_at"])
+        AdminAuditLog.objects.create(
+            actor=request.user,
+            action="MANUAL_POS_PAYMENT_RECORDED",
+            target_type="Appointment",
+            target_id=str(appointment.pk),
+            summary=f"Recorded physical Paytm POS payment for appointment BHCC-{appointment.pk:06d}",
+            metadata={"reference": reference, "amount": appointment.fee},
+        )
+    return Response(AppointmentSerializer(appointment).data)
+
+
+def _paytm_result(payload):
+    body = payload.get("body") if isinstance(payload, dict) else {}
+    body = body if isinstance(body, dict) else {}
+    info = body.get("resultInfo") if isinstance(body.get("resultInfo"), dict) else body
+    return str(info.get("resultStatus") or info.get("status") or "").upper(), str(info.get("resultMsg") or "")
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def paytm_pos_initiate(request, pk: int):
+    role = getattr(getattr(request.user, "profile", None), "role", None)
+    if role not in {UserRole.ADMIN, UserRole.COUNTER}:
+        return Response({"detail": "Only administrators and counter staff can initiate POS payments."}, status=status.HTTP_403_FORBIDDEN)
+    appointment = get_object_or_404(Appointment, pk=pk)
+    if appointment.status == Appointment.Status.CANCELLED or appointment.fee <= 0:
+        return Response({"detail": "This appointment does not require a POS payment."}, status=status.HTTP_409_CONFLICT)
+    if appointment.payment_status == "Confirmed":
+        return Response({"detail": "This appointment is already paid."}, status=status.HTTP_409_CONFLICT)
+    from .paytm_pos import PaytmPosError, initiate_sale
+    transaction_id = f"BHCC{appointment.pk}{timezone.now():%y%m%d%H%M%S}"
+    try:
+        details = initiate_sale(transaction_id=transaction_id, amount_rupees=appointment.fee, reference=f"BHCC-{appointment.pk:06d}")
+    except PaytmPosError as exc:
+        return Response({"detail": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+    result_status, result_message = _paytm_result(details["response"])
+    if result_status not in {"SUCCESS", "ACCEPTED_SUCCESS", "PENDING"}:
+        return Response({"detail": result_message or "Paytm rejected the payment request."}, status=status.HTTP_502_BAD_GATEWAY)
+    appointment.payment_method = "PAYTM_POS_AUTOMATIC"
+    appointment.payment_reference = transaction_id
+    appointment.payment_status = "Pending at POS"
+    appointment.gateway_details = {"paytmPos": details}
+    appointment.save(update_fields=["payment_method", "payment_reference", "payment_status", "gateway_details", "updated_at"])
+    return Response(AppointmentSerializer(appointment).data)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def paytm_pos_status(request, pk: int):
+    role = getattr(getattr(request.user, "profile", None), "role", None)
+    if role not in {UserRole.ADMIN, UserRole.COUNTER}:
+        return Response({"detail": "Only administrators and counter staff can verify POS payments."}, status=status.HTTP_403_FORBIDDEN)
+    appointment = get_object_or_404(Appointment, pk=pk, payment_method="PAYTM_POS_AUTOMATIC")
+    stored = appointment.gateway_details if isinstance(appointment.gateway_details, dict) else {}
+    paytm = stored.get("paytmPos") if isinstance(stored.get("paytmPos"), dict) else {}
+    request_data = paytm.get("request") if isinstance(paytm.get("request"), dict) else {}
+    from .paytm_pos import PaytmPosError, enquire_status
+    try:
+        result = enquire_status(transaction_id=appointment.payment_reference, transaction_datetime=str(request_data.get("transactionDateTime") or ""))
+    except PaytmPosError as exc:
+        return Response({"detail": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+    result_status, _ = _paytm_result(result)
+    body = result.get("body") if isinstance(result.get("body"), dict) else {}
+    returned_amount = str(body.get("transactionAmount") or "")
+    if result_status == "SUCCESS" and returned_amount and returned_amount != str(appointment.fee * 100):
+        return Response({"detail": "Paytm returned a different amount. Payment was not confirmed."}, status=status.HTTP_409_CONFLICT)
+    stored["paytmPosStatus"] = result
+    appointment.gateway_details = stored
+    if result_status == "SUCCESS":
+        appointment.payment_status = "Confirmed"
+        appointment.payment_recorded_by = request.user
+        appointment.payment_recorded_at = timezone.now()
+    elif result_status in {"FAIL", "FAILED", "FAILURE"}:
+        appointment.payment_status = "Failed"
+    else:
+        appointment.payment_status = "Pending at POS"
+    appointment.save(update_fields=["payment_status", "payment_recorded_by", "payment_recorded_at", "gateway_details", "updated_at"])
+    return Response(AppointmentSerializer(appointment).data)
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def dental_procedures(request):
+    from .models import DentalProcedure
+    role = getattr(getattr(request.user, "profile", None), "role", None)
+    if request.method == "POST":
+        if role != UserRole.ADMIN:
+            return Response({"detail": "Only administrators can create procedures."}, status=status.HTTP_403_FORBIDDEN)
+        name = str(request.data.get("name") or "").strip()
+        try: charge = int(request.data.get("charge"))
+        except (TypeError, ValueError): charge = 0
+        if not name or charge <= 0:
+            return Response({"detail": "Procedure name and a positive charge are required."}, status=status.HTTP_400_BAD_REQUEST)
+        row = DentalProcedure.objects.create(name=name, description=str(request.data.get("description") or "").strip(), charge=charge)
+        return Response({"id":str(row.id),"name":row.name,"description":row.description,"charge":row.charge,"isActive":row.is_active}, status=status.HTTP_201_CREATED)
+    rows = DentalProcedure.objects.all() if role == UserRole.ADMIN else DentalProcedure.objects.filter(is_active=True)
+    return Response([{"id":str(row.id),"name":row.name,"description":row.description,"charge":row.charge,"isActive":row.is_active} for row in rows.order_by("name")])
+
+
+@api_view(["PATCH"])
+@permission_classes([IsAuthenticated])
+def dental_procedure_detail(request, pk: int):
+    from .models import DentalProcedure
+    if getattr(getattr(request.user, "profile", None), "role", None) != UserRole.ADMIN:
+        return Response({"detail": "Only administrators can update procedures."}, status=status.HTTP_403_FORBIDDEN)
+    row = get_object_or_404(DentalProcedure, pk=pk)
+    if "name" in request.data: row.name = str(request.data["name"]).strip()
+    if "charge" in request.data:
+        try: row.charge = int(request.data["charge"])
+        except (TypeError, ValueError): return Response({"detail":"Charge must be a positive number."}, status=400)
+    if "description" in request.data: row.description = str(request.data["description"]).strip()
+    if "isActive" in request.data: row.is_active = bool(request.data["isActive"])
+    if not row.name or row.charge <= 0: return Response({"detail":"Name and positive charge are required."}, status=400)
+    row.save(); return Response({"id":str(row.id),"name":row.name,"description":row.description,"charge":row.charge,"isActive":row.is_active})
+
+
+@api_view(["GET", "PUT"])
+@permission_classes([IsAuthenticated])
+def appointment_procedures(request, pk: int):
+    from .models import AppointmentProcedure, DentalProcedure
+    appointment = get_object_or_404(Appointment.objects.select_related("doctor__profile"), pk=pk)
+    role = getattr(getattr(request.user, "profile", None), "role", None)
+    if role not in {UserRole.ADMIN, UserRole.COUNTER} and request.user.id not in {appointment.doctor_id, appointment.patient_id}:
+        return Response({"detail":"Forbidden."}, status=403)
+    if request.method == "PUT":
+        if role != UserRole.DOCTOR or request.user.id != appointment.doctor_id:
+            return Response({"detail":"Only the assigned doctor can add procedures."}, status=403)
+        if "dental" not in appointment.department.casefold():
+            return Response({"detail":"Procedures can only be added to dental appointments."}, status=400)
+        if appointment.payment_status == "Confirmed":
+            return Response({"detail":"Paid bills cannot be changed."}, status=409)
+        ids = request.data.get("procedureIds") or []
+        procedures = list(DentalProcedure.objects.filter(pk__in=ids, is_active=True))
+        if len(procedures) != len(set(map(str, ids))): return Response({"detail":"Select valid active procedures."}, status=400)
+        with transaction.atomic():
+            appointment.procedure_charges.all().delete()
+            AppointmentProcedure.objects.bulk_create([AppointmentProcedure(appointment=appointment, procedure=row, name=row.name, charge=row.charge, added_by=request.user) for row in procedures])
+            appointment.fee = int(appointment.doctor.profile.fee or 0) + sum(row.charge for row in procedures)
+            appointment.payment_status = "Pay at Counter"
+            appointment.save(update_fields=["fee", "payment_status", "updated_at"])
+    rows = appointment.procedure_charges.all().order_by("id")
+    return Response({"appointmentId":str(appointment.id),"total":appointment.fee,"items":[{"id":str(row.id),"procedureId":str(row.procedure_id),"name":row.name,"charge":row.charge} for row in rows]})
 
 
 @api_view(["GET", "PUT"])
@@ -953,6 +1133,12 @@ def registrations(request):
                 return Response({"detail": "The selected department is not part of this camp."}, status=status.HTTP_400_BAD_REQUEST)
             if camp.capacity and camp.registrations.count() >= camp.capacity:
                 return Response({"detail": "This camp has reached its registration capacity."}, status=status.HTTP_409_CONFLICT)
+            doctor = get_object_or_404(User.objects.select_related("profile"), pk=request.data.get("doctorId"), profile__role=UserRole.DOCTOR, is_active=True)
+            if doctor.profile.department.casefold() != department.name.casefold():
+                return Response({"detail": "Select a doctor from the chosen department."}, status=status.HTTP_400_BAD_REQUEST)
+            camp_time = str(request.data.get("time") or "").strip()
+            if not camp_time:
+                return Response({"detail": "Select a doctor appointment time for the camp."}, status=status.HTTP_400_BAD_REQUEST)
 
         matching_profiles = list(UserProfile.objects.select_for_update().filter(phone_no=phone_no, role=UserRole.PATIENT).select_related("user"))
         existing_patient_id = request.data.get("existingPatientId")
@@ -996,7 +1182,12 @@ def registrations(request):
             fee=0 if is_free_camp else 150, is_free_camp=is_free_camp,
         )
         if camp:
-            CampRegistration.objects.create(camp=camp, registration=obj, registered_by=request.user)
+            try:
+                camp_appointment = Appointment.objects.create(patient=patient, doctor=doctor, patient_name=name, doctor_name=user_to_out(doctor)["name"], department=department.name, date=camp.date, time=camp_time, fee=0, payment_status="Free Camp")
+            except IntegrityError:
+                transaction.set_rollback(True)
+                return Response({"detail": "This doctor slot has already been booked. Select another time."}, status=status.HTTP_409_CONFLICT)
+            CampRegistration.objects.create(camp=camp, registration=obj, registered_by=request.user, doctor=doctor, appointment=camp_appointment)
     return Response(LabRegistrationSerializer(obj).data, status=status.HTTP_201_CREATED)
 
 

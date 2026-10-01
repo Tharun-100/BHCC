@@ -141,6 +141,8 @@ export interface Department {
   tokenPrefix: string;
 }
 
+export interface DentalProcedure { id:string; name:string; description:string; charge:number; isActive:boolean; }
+
 export interface Appointment {
   id: string;
   patientId: string;
@@ -154,6 +156,9 @@ export interface Appointment {
   status: 'Upcoming' | 'CheckedIn' | 'InConsultation' | 'Completed' | 'Cancelled' | 'NoShow' | 'Rescheduled';
   paymentId: string;
   paymentStatus?: string;
+  paymentMethod?: string;
+  paymentReference?: string;
+  paymentRecordedAt?: string | null;
 }
 
 export interface Feedback {
@@ -173,6 +178,7 @@ export interface LabRegistration {
   address: string;
   nativePlace: string;
   patientId?: string | null;
+  patientUserId?: string | null;
   departmentId?: string | null;
   departmentName?: string | null;
   tokenNumber: string;

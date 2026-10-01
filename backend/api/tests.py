@@ -15,7 +15,7 @@ from .email_service import (
     send_contact_notification,
     send_staff_login_otp,
 )
-from .models import Appointment, AttendanceAuditLog, AttendanceRecord, CampRegistration, Department, FreeCamp, LabRegistration, PayrollRecord, Prescription, UserProfile, UserRole, allocate_patient_id
+from .models import Appointment, AttendanceAuditLog, AttendanceRecord, CampRegistration, Department, DoctorAvailability, FreeCamp, LabRegistration, PayrollRecord, Prescription, UserProfile, UserRole, allocate_patient_id
 
 
 class ClinicOperationsTests(TestCase):
@@ -23,7 +23,7 @@ class ClinicOperationsTests(TestCase):
         self.patient = User.objects.create_user(username="operations-patient@example.com", password="safe-test-password")
         UserProfile.objects.create(user=self.patient, role=UserRole.PATIENT, name="Patient")
         self.doctor = User.objects.create_user(username="operations-doctor@example.com", password="safe-test-password")
-        UserProfile.objects.create(user=self.doctor, role=UserRole.DOCTOR, name="Doctor", salary=40000)
+        UserProfile.objects.create(user=self.doctor, role=UserRole.DOCTOR, name="Doctor", salary=40000, department="Dental", fee=500)
         self.counter = User.objects.create_user(username="operations-counter@example.com", password="safe-test-password")
         UserProfile.objects.create(user=self.counter, role=UserRole.COUNTER, name="Counter", salary=20000)
         self.admin = User.objects.create_user(username="operations-admin@example.com", password="safe-test-password")
@@ -35,6 +35,37 @@ class ClinicOperationsTests(TestCase):
         payload = {"patientName":"Patient", "doctorId":str(self.doctor.id), "doctorName":"Doctor", "department":"Dental", "date":date.today(), "time":"10:00", "fee":500}
         self.assertEqual(client.post("/api/appointments/", payload, format="json").status_code, 201)
         self.assertEqual(client.post("/api/appointments/", payload, format="json").status_code, 409)
+
+    def test_counter_records_unique_manual_paytm_pos_reference(self):
+        appointment = Appointment.objects.create(
+            patient=self.patient, doctor=self.doctor, patient_name="Patient", doctor_name="Doctor",
+            department="Dental", date=date.today(), time="11:00", fee=500, payment_status="Pay at Counter",
+        )
+        client = APIClient(); client.force_authenticate(self.counter)
+        response = client.patch(f"/api/appointments/{appointment.id}/manual-pos-payment/", {"reference": "PAYTM-RECEIPT-101"}, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["paymentStatus"], "Confirmed")
+        self.assertEqual(response.data["paymentMethod"], "PAYTM_POS_MANUAL")
+        self.assertEqual(response.data["paymentReference"], "PAYTM-RECEIPT-101")
+        appointment.refresh_from_db()
+        self.assertEqual(appointment.payment_recorded_by, self.counter)
+        self.assertIsNotNone(appointment.payment_recorded_at)
+
+        other = Appointment.objects.create(
+            patient=self.patient, doctor=self.doctor, patient_name="Patient", doctor_name="Doctor",
+            department="Dental", date=date.today(), time="12:00", fee=500, payment_status="Pay at Counter",
+        )
+        duplicate = client.patch(f"/api/appointments/{other.id}/manual-pos-payment/", {"reference": "paytm-receipt-101"}, format="json")
+        self.assertEqual(duplicate.status_code, 409)
+
+    def test_patient_cannot_record_manual_pos_payment(self):
+        appointment = Appointment.objects.create(
+            patient=self.patient, doctor=self.doctor, patient_name="Patient", doctor_name="Doctor",
+            department="Dental", date=date.today(), time="13:00", fee=500,
+        )
+        client = APIClient(); client.force_authenticate(self.patient)
+        response = client.patch(f"/api/appointments/{appointment.id}/manual-pos-payment/", {"reference": "PAYTM-102"}, format="json")
+        self.assertEqual(response.status_code, 403)
 
     def test_counter_registration_creates_patient_id_and_daily_token(self):
         client = APIClient(); client.force_authenticate(self.counter)
@@ -93,7 +124,8 @@ class ClinicOperationsTests(TestCase):
         self.assertEqual(admin_client.patch(f"/api/free-camps/{camp_id}/", {"status":"OPEN"}, format="json").status_code, 200)
 
         counter_client = APIClient(); counter_client.force_authenticate(self.counter)
-        response = counter_client.post("/api/registrations/", {"name":"Camp Patient", "phoneNo":"9903554605", "address":"Newtown", "age":28, "gender":"FEMALE", "departmentId":str(self.department.id), "campId":camp_id, "isFreeCamp":True}, format="json")
+        DoctorAvailability.objects.create(doctor=self.doctor, date=date.today()+timedelta(days=1), slots=["10:00"])
+        response = counter_client.post("/api/registrations/", {"name":"Camp Patient", "phoneNo":"9903554605", "address":"Newtown", "age":28, "gender":"FEMALE", "departmentId":str(self.department.id), "campId":camp_id, "doctorId":str(self.doctor.id), "time":"10:00", "isFreeCamp":True}, format="json")
         self.assertEqual(response.status_code, 201)
         self.assertEqual(set(["name", "phoneNo", "patientId", "departmentName", "tokenNumber"]) - set(response.data), set())
         self.assertNotIn("roomNumber", response.data)
