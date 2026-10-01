@@ -94,9 +94,20 @@ export async function apiFetch<T>(
   const body = contentType.includes('application/json') ? await res.json().catch(() => null) : await res.text();
 
   if (!res.ok) {
+    const fieldErrors = typeof body === 'object' && body
+      ? Object.entries(body as Record<string, unknown>)
+          .filter(([field]) => field !== 'detail')
+          .map(([field, value]) => {
+            const message = Array.isArray(value) ? value.join(' ') : String(value);
+            return `${field}: ${message}`;
+          })
+          .join(' ')
+      : '';
     const msg =
       typeof body === 'object' && body && 'detail' in body && typeof body.detail === 'string'
         ? body.detail
+        : fieldErrors
+          ? fieldErrors
         : typeof body === 'string' && body
           ? body
           : `Request failed: ${res.status}`;
