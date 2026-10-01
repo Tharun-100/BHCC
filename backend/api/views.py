@@ -68,6 +68,21 @@ def _next_appointment_token(department_name: str, appointment_date: date_type) -
     return sequence, f"{prefix.upper()}-{sequence:03d}"
 
 
+def _follow_up_error(original: Appointment, patient: User, doctor: User, appointment_date: date_type) -> str | None:
+    if original.patient_id != patient.id or original.doctor_id != doctor.id:
+        return "The free follow-up must be for the same patient and doctor."
+    if original.status != Appointment.Status.COMPLETED or original.payment_status != "Confirmed" or original.fee <= 0:
+        return "Only a completed, paid consultation qualifies for a free follow-up."
+    expiry_date = original.date + timedelta(days=7)
+    if appointment_date < original.date or appointment_date > expiry_date or timezone.localdate() > expiry_date:
+        return "The seven-day free follow-up period has expired."
+    if original.follow_ups.exclude(
+        status__in=[Appointment.Status.CANCELLED, Appointment.Status.NO_SHOW, Appointment.Status.RESCHEDULED]
+    ).exists():
+        return "The free follow-up for this consultation has already been used."
+    return None
+
+
 def _record_policy_consents(request, user: User) -> None:
     for document_type in ("PRIVACY", "TERMS"):
         ConsentRecord.objects.get_or_create(
@@ -767,6 +782,14 @@ def appointments(request):
         fee = int(doctor.profile.fee or 0)
         try:
             with transaction.atomic():
+                follow_up = None
+                follow_up_id = request.data.get("followUpOf")
+                if follow_up_id:
+                    follow_up = get_object_or_404(Appointment.objects.select_for_update(), pk=follow_up_id)
+                    follow_up_error = _follow_up_error(follow_up, patient, doctor, ser.validated_data["date"])
+                    if follow_up_error:
+                        return Response({"detail": follow_up_error}, status=status.HTTP_409_CONFLICT)
+                    fee = 0
                 sequence, token_number = _next_appointment_token(doctor.profile.department, ser.validated_data["date"])
                 obj = Appointment.objects.create(
                     patient=patient,
@@ -779,14 +802,16 @@ def appointments(request):
                     fee=fee,
                     department_sequence=sequence,
                     token_number=token_number,
+                    follow_up_of=follow_up,
                     status=Appointment.Status.UPCOMING,
                     payment_id=ser.validated_data.get("payment_id", ""),
-                    payment_status="Pay at Counter" if role in {UserRole.COUNTER, UserRole.ADMIN} else "Pending",
+                    payment_status="Free Follow-up" if follow_up else ("Pay at Counter" if role in {UserRole.COUNTER, UserRole.ADMIN} else "Pending"),
+                    payment_method="FREE_FOLLOW_UP" if follow_up else "",
                 )
         except IntegrityError:
             return Response({"detail": "This doctor appointment slot has already been booked. Please select another time."}, status=status.HTTP_409_CONFLICT)
         schedule_appointment_confirmation(obj.id)
-        return Response({"id": str(obj.id)}, status=status.HTTP_201_CREATED)
+        return Response({"id": str(obj.id), "isFreeFollowUp": bool(obj.follow_up_of_id)}, status=status.HTTP_201_CREATED)
 
     now = timezone.localtime()
     no_show_cutoff = now - timedelta(minutes=30)
@@ -1764,11 +1789,6 @@ def payments_create_order(request):
 
     appointment_data = request.data.get("appointmentData") or {}
     fee = int(appointment_data.get("fee") or 0)
-    if fee <= 0:
-        return Response({"detail": "Valid fee is required."}, status=status.HTTP_400_BAD_REQUEST)
-
-    gateway_fee = int((fee * 0.02) + 0.9999)
-    final_amount = fee + gateway_fee
 
     doctor_id = int(appointment_data.get("doctorId") or 0)
     if doctor_id <= 0:
@@ -1786,6 +1806,18 @@ def payments_create_order(request):
 
     try:
         with transaction.atomic():
+            follow_up = None
+            follow_up_id = appointment_data.get("followUpOf")
+            if follow_up_id:
+                follow_up = get_object_or_404(Appointment.objects.select_for_update(), pk=follow_up_id)
+                follow_up_error = _follow_up_error(follow_up, user, doctor, appt_date)
+                if follow_up_error:
+                    return Response({"detail": follow_up_error}, status=status.HTTP_409_CONFLICT)
+                fee = 0
+            elif fee <= 0:
+                return Response({"detail": "Valid fee is required."}, status=status.HTTP_400_BAD_REQUEST)
+            gateway_fee = int((fee * 0.02) + 0.9999) if fee else 0
+            final_amount = fee + gateway_fee
             department_name = appointment_data.get("department") or doctor.profile.department
             sequence, token_number = _next_appointment_token(department_name, appt_date)
             appt = Appointment.objects.create(
@@ -1799,8 +1831,10 @@ def payments_create_order(request):
                 fee=fee,
                 department_sequence=sequence,
                 token_number=token_number,
+                follow_up_of=follow_up,
                 status=Appointment.Status.UPCOMING,
-                payment_status="Pending",
+                payment_status="Free Follow-up" if follow_up else "Pending",
+                payment_method="FREE_FOLLOW_UP" if follow_up else "",
                 order_id="",
                 gateway_fee=gateway_fee,
                 total_amount=final_amount,
@@ -1808,6 +1842,10 @@ def payments_create_order(request):
             )
     except IntegrityError:
         return Response({"detail": "This appointment slot was just booked by another patient. Please choose another available time."}, status=status.HTTP_409_CONFLICT)
+
+    if appt.follow_up_of_id:
+        schedule_appointment_confirmation(appt.id)
+        return Response({"orderId": str(appt.id), "gatewayOrderId": "", "amount": 0, "amountPaise": 0, "currency": "INR", "offlinePayment": True, "freeFollowUp": True, "message": "Your free follow-up appointment has been booked."})
 
     key_id = os.getenv("RAZORPAY_KEY_ID")
     key_secret = os.getenv("RAZORPAY_KEY_SECRET")

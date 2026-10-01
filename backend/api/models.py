@@ -105,6 +105,9 @@ class Appointment(models.Model):
     fee = models.PositiveIntegerField(default=0)
     department_sequence = models.PositiveIntegerField(null=True, blank=True)
     token_number = models.CharField(max_length=30, blank=True, default="")
+    follow_up_of = models.ForeignKey(
+        "self", on_delete=models.PROTECT, null=True, blank=True, related_name="follow_ups"
+    )
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.UPCOMING)
     payment_id = models.CharField(max_length=120, blank=True, default="")
 

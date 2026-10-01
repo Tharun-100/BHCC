@@ -13,7 +13,7 @@ import {
   MapPin,
   Loader2,
 } from 'lucide-react';
-import { getDoctorAvailability, listDepartments, listDoctors } from '../services/clinicService';
+import { getDoctorAvailability, listDepartments, listDoctors, listPatientAppointments } from '../services/clinicService';
 import { apiFetch } from '@/lib/api';
 import { getAccessToken } from '@/lib/storage';
 import { useAuth } from '@/providers/AuthProvider';
@@ -66,6 +66,8 @@ const BookAppointment: React.FC = () => {
   const [gatewayFee, setGatewayFee] = useState(0);
   const [totalAmount, setTotalAmount] = useState(0);
   const [offlinePaymentMessage, setOfflinePaymentMessage] = useState('');
+  const [patientAppointments, setPatientAppointments] = useState<import('../types').Appointment[]>([]);
+  const [selectedFollowUpId, setSelectedFollowUpId] = useState('');
 
   useEffect(() => {
     if (!isLoading && !user && !getAccessToken()) {
@@ -91,6 +93,8 @@ const BookAppointment: React.FC = () => {
     };
   }, []);
 
+  useEffect(() => { if (user?.id) listPatientAppointments(user.id).then(setPatientAppointments).catch(() => setPatientAppointments([])); }, [user?.id]);
+
   useEffect(() => {
     if (!requestedDepartment || hasAppliedRequestedDepartment.current) return;
     const requested = requestedDepartment.toLowerCase();
@@ -112,13 +116,17 @@ const BookAppointment: React.FC = () => {
     setSelectedDoc(doc);
     setSelectedDate('');
     setSelectedSlot('');
+    setSelectedFollowUpId('');
     setStep(3);
   };
 
+  const eligibleFollowUp = useMemo(() => { if(!selectedDoc||!selectedDate)return undefined; const target=new Date(`${selectedDate}T00:00:00`); return patientAppointments.find((row)=>{const original=new Date(`${row.date}T00:00:00`);const expiry=new Date(original);expiry.setDate(expiry.getDate()+7);const alreadyUsed=patientAppointments.some((candidate)=>candidate.followUpOf===row.id&&!['Cancelled','NoShow','Rescheduled'].includes(candidate.status));return row.doctorId===selectedDoc.id&&row.status==='Completed'&&row.paymentStatus==='Confirmed'&&row.fee>0&&target>=original&&target<=expiry&&!alreadyUsed;}); },[patientAppointments,selectedDoc,selectedDate]);
+
   const handleDateAndSlotConfirm = () => {
     if (selectedDate && selectedSlot && selectedDoc?.fee) {
-      const fee = selectedDoc.fee;
-      const calculatedGatewayFee = Math.ceil(fee * 0.02);
+      const fee = eligibleFollowUp ? 0 : selectedDoc.fee;
+      setSelectedFollowUpId(eligibleFollowUp?.id || '');
+      const calculatedGatewayFee = fee ? Math.ceil(fee * 0.02) : 0;
       setGatewayFee(calculatedGatewayFee);
       setTotalAmount(fee + calculatedGatewayFee);
       setStep(4);
@@ -139,6 +147,7 @@ const BookAppointment: React.FC = () => {
       date: selectedDate,
       time: selectedSlot,
       fee: selectedDoc.fee || 0,
+      followUpOf: selectedFollowUpId || undefined,
     };
 
     try {
@@ -152,6 +161,7 @@ const BookAppointment: React.FC = () => {
         amountPaise: number;
         currency: string;
         offlinePayment?: boolean;
+        freeFollowUp?: boolean;
         message?: string;
       }>('/api/payments/create-order/', {
         method: 'POST',
@@ -430,9 +440,10 @@ const BookAppointment: React.FC = () => {
 
                     <hr className="border-sky-100 my-4" />
 
+                    {selectedFollowUpId && <div className="rounded-2xl bg-green-100 p-4 text-green-800"><b>Free seven-day follow-up applied</b><p className="mt-1 text-xs">This is the one free follow-up for your completed consultation with the same doctor.</p></div>}
                     <div className="flex justify-between items-center">
                       <span className="text-gray-500 font-medium">Consultation Fee</span>
-                      <span className="font-medium text-gray-800">Rs. {selectedDoc?.fee}</span>
+                      <span className="font-medium text-gray-800">{selectedFollowUpId ? 'Free' : `Rs. ${selectedDoc?.fee}`}</span>
                     </div>
                     {gatewayFee > 0 ? (
                       <div className="flex justify-between items-center">
@@ -451,7 +462,7 @@ const BookAppointment: React.FC = () => {
                   disabled={isProcessing}
                   className="w-full py-5 bg-sky-600 text-white rounded-2xl font-extrabold text-lg hover:bg-sky-700 transition shadow-xl shadow-sky-200 disabled:opacity-50 flex justify-center items-center"
                 >
-                  {isProcessing ? <Loader2 className="animate-spin" /> : `Confirm Booking Rs. ${totalAmount}`}
+                  {isProcessing ? <Loader2 className="animate-spin" /> : selectedFollowUpId ? 'Confirm Free Follow-up' : `Confirm Booking Rs. ${totalAmount}`}
                 </button>
               </div>
             </div>

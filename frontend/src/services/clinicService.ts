@@ -68,10 +68,9 @@ export const createAppointment = async (payload: NewAppointmentInput): Promise<s
   return created.id;
 };
 
-export const createCounterAppointment = async (payload: {patientId:string; doctorId:string; date:string; time:string}): Promise<string> => {
+export const createCounterAppointment = async (payload: {patientId:string; doctorId:string; date:string; time:string; followUpOf?:string}): Promise<{id:string;isFreeFollowUp:boolean}> => {
   const token = authTokenOrThrow();
-  const created = await apiFetch<{id:string}>('/api/appointments/', { method:'POST', authToken:token, body:JSON.stringify({...payload, patientName:'Counter booking', doctorName:'Doctor', department:'', fee:0}) });
-  return created.id;
+  return apiFetch<{id:string;isFreeFollowUp:boolean}>('/api/appointments/', { method:'POST', authToken:token, body:JSON.stringify({...payload, patientName:'Counter booking', doctorName:'Doctor', department:'', fee:0}) });
 };
 
 export const listPatientAppointments = async (patientId: string): Promise<Appointment[]> => {

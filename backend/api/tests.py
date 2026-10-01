@@ -64,6 +64,37 @@ class ClinicOperationsTests(TestCase):
         self.assertEqual(Appointment.objects.get(pk=second.data["id"]).token_number, "DEN-002")
         self.assertEqual(Appointment.objects.get(pk=next_day.data["id"]).token_number, "DEN-001")
 
+    def test_one_free_follow_up_with_same_doctor_within_seven_days(self):
+        original = Appointment.objects.create(
+            patient=self.patient, doctor=self.doctor, patient_name="Patient", doctor_name="Doctor",
+            department="Dental", date=date.today(), time="09:00", fee=500,
+            status=Appointment.Status.COMPLETED, payment_status="Confirmed", payment_method="CASH",
+        )
+        client = APIClient(); client.force_authenticate(self.counter)
+        payload = {"patientId":str(self.patient.id), "patientName":"Patient", "doctorId":str(self.doctor.id), "doctorName":"Doctor", "department":"Dental", "date":date.today()+timedelta(days=2), "time":"09:15", "fee":500, "followUpOf":str(original.id)}
+        response = client.post("/api/appointments/", payload, format="json")
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.data["isFreeFollowUp"])
+        follow_up = Appointment.objects.get(pk=response.data["id"])
+        self.assertEqual(follow_up.fee, 0)
+        self.assertEqual(follow_up.payment_method, "FREE_FOLLOW_UP")
+        self.assertEqual(follow_up.payment_status, "Free Follow-up")
+
+        payload["time"] = "09:30"
+        duplicate = client.post("/api/appointments/", payload, format="json")
+        self.assertEqual(duplicate.status_code, 409)
+
+    def test_expired_or_unpaid_consultation_does_not_qualify_for_follow_up(self):
+        original = Appointment.objects.create(
+            patient=self.patient, doctor=self.doctor, patient_name="Patient", doctor_name="Doctor",
+            department="Dental", date=date.today()-timedelta(days=8), time="09:00", fee=500,
+            status=Appointment.Status.COMPLETED, payment_status="Confirmed",
+        )
+        client = APIClient(); client.force_authenticate(self.counter)
+        payload = {"patientId":str(self.patient.id), "patientName":"Patient", "doctorId":str(self.doctor.id), "doctorName":"Doctor", "department":"Dental", "date":date.today(), "time":"09:45", "fee":500, "followUpOf":str(original.id)}
+        response = client.post("/api/appointments/", payload, format="json")
+        self.assertEqual(response.status_code, 409)
+
     def test_counter_records_unique_manual_paytm_pos_reference(self):
         appointment = Appointment.objects.create(
             patient=self.patient, doctor=self.doctor, patient_name="Patient", doctor_name="Doctor",

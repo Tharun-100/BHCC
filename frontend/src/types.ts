@@ -157,6 +157,8 @@ export interface Appointment {
   time: string; // Format: HH:MM
   fee: number;
   tokenNumber?: string;
+  followUpOf?: string | null;
+  isFreeFollowUp?: boolean;
   status: 'Upcoming' | 'CheckedIn' | 'InConsultation' | 'Completed' | 'Cancelled' | 'NoShow' | 'Rescheduled';
   paymentId: string;
   paymentStatus?: string;

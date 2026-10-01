@@ -144,6 +144,8 @@ class AppointmentSerializer(serializers.ModelSerializer):
             "time",
             "fee",
             "tokenNumber",
+            "followUpOf",
+            "isFreeFollowUp",
             "status",
             "paymentId",
             "paymentStatus",
@@ -154,10 +156,15 @@ class AppointmentSerializer(serializers.ModelSerializer):
 
     paymentId = serializers.CharField(source="payment_id", allow_blank=True, required=False)
     tokenNumber = serializers.CharField(source="token_number", read_only=True)
+    followUpOf = serializers.CharField(source="follow_up_of_id", required=False, allow_null=True)
+    isFreeFollowUp = serializers.SerializerMethodField()
     paymentStatus = serializers.CharField(source="payment_status", allow_blank=True, required=False)
     paymentMethod = serializers.CharField(source="payment_method", read_only=True)
     paymentReference = serializers.CharField(source="payment_reference", read_only=True)
     paymentRecordedAt = serializers.DateTimeField(source="payment_recorded_at", read_only=True, allow_null=True)
+
+    def get_isFreeFollowUp(self, obj: Appointment) -> bool:
+        return bool(obj.follow_up_of_id and obj.payment_method == "FREE_FOLLOW_UP")
 
 
 class FeedbackOutSerializer(serializers.Serializer):
