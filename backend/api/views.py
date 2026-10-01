@@ -1179,7 +1179,7 @@ def registrations(request):
         obj = LabRegistration.objects.create(
             name=name, age=age, gender=gender, phone_no=phone_no, address=address, native_place=native_place, patient=patient,
             department=department, department_sequence=sequence, token_number=f"{prefix}-{sequence:03d}",
-            fee=0 if is_free_camp else 150, is_free_camp=is_free_camp,
+            fee=0, is_free_camp=is_free_camp,
         )
         if camp:
             try:

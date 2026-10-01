@@ -173,7 +173,7 @@ class LabRegistration(models.Model):
     registration_date = models.DateField(default=timezone.localdate)
     department_sequence = models.PositiveIntegerField(null=True, blank=True)
     token_number = models.CharField(max_length=30, blank=True, default="")
-    fee = models.PositiveIntegerField(default=150)
+    fee = models.PositiveIntegerField(default=0)
     is_free_camp = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 

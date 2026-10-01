@@ -73,7 +73,7 @@ class ClinicOperationsTests(TestCase):
         self.assertEqual(response.status_code, 201)
         self.assertTrue(response.data["patientId"].startswith("BHCC"))
         self.assertEqual(response.data["tokenNumber"], "DEN-001")
-        self.assertEqual(LabRegistration.objects.get().fee, 150)
+        self.assertEqual(LabRegistration.objects.get().fee, 0)
 
     def test_registration_requires_demographics_and_existing_lookup_prefills(self):
         client = APIClient(); client.force_authenticate(self.counter)

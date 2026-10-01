@@ -1,6 +1,6 @@
 import React from 'react';
 import { Appointment, Department, LabRegistration, User } from '../../types';
-import { Download, TrendingUp, Users, Wallet } from 'lucide-react';
+import { Download, TrendingUp, Wallet } from 'lucide-react';
 import { listAllAppointments, listDepartments, listRegistrations } from '../../services/clinicService';
 import { downloadCsv } from '@/lib/downloadCsv';
 import RegistrationEditor from '@/components/RegistrationEditor';
@@ -27,12 +27,10 @@ const AdminRevenue: React.FC<{ user: User }> = () => {
 
   const completedAppointments = appointments.filter((row) => row.status === 'Completed');
   const doctorRevenue = completedAppointments.reduce((sum, row) => sum + row.fee * 0.5, 0);
-  const labRevenue = registrations.reduce((sum, row) => sum + row.fee, 0);
-  const totalRevenue = doctorRevenue + labRevenue;
-  const totalTransactions = completedAppointments.length + registrations.length;
+  const totalRevenue = doctorRevenue;
+  const totalTransactions = completedAppointments.length;
   const averageTicket = totalTransactions ? totalRevenue / totalTransactions : 0;
   const doctorPercent = totalRevenue ? (doctorRevenue / totalRevenue) * 100 : 0;
-  const labPercent = totalRevenue ? (labRevenue / totalRevenue) * 100 : 0;
 
   const handleDownloadStatement = () => {
     const now = new Date();
@@ -42,16 +40,11 @@ const AdminRevenue: React.FC<{ user: User }> = () => {
       const date = new Date(`${row.date}T00:00:00`);
       return date.getFullYear() === year && date.getMonth() === month;
     });
-    const monthlyRegistrations = registrations.filter((row) => {
-      const date = new Date(row.createdAt);
-      return date.getFullYear() === year && date.getMonth() === month;
-    });
     downloadCsv(`bhcc-revenue-${year}-${String(month + 1).padStart(2, '0')}.csv`, [
       ['Type', 'Date', 'Reference', 'Description', 'Gross Amount', 'Clinic Revenue'],
       ...monthlyAppointments.map((row) => [
         'Doctor consultation', row.date, row.id, `${row.patientName} - ${row.doctorName}`, row.fee, row.fee * 0.5,
       ]),
-      ...monthlyRegistrations.map((row) => ['Service lab', row.createdAt, row.id, row.name, row.fee, row.fee]),
     ]);
   };
 
@@ -59,21 +52,19 @@ const AdminRevenue: React.FC<{ user: User }> = () => {
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
       <div className="mb-10">
         <h1 className="text-3xl font-extrabold text-gray-900">Revenue Analytics</h1>
-        <p className="text-gray-500">Live totals from completed consultations and service-lab registrations.</p>
+        <p className="text-gray-500">Live totals from completed paid doctor consultations. Patient registration and free camps have no registration charge.</p>
       </div>
       {error && <p className="mb-6 rounded-xl bg-red-50 px-4 py-3 text-sm font-bold text-red-600">{error}</p>}
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
         <RevenueCard icon={<Wallet size={24} />} color="green" label="Total Clinic Revenue" value={currency(totalRevenue)} detail={`${totalTransactions} recorded transactions`} />
         <RevenueCard icon={<TrendingUp size={24} />} color="sky" label="Doctor Consultations (Share)" value={currency(doctorRevenue)} detail="50% clinic share of completed consultation fees" />
-        <RevenueCard icon={<Users size={24} />} color="purple" label="Service Lab Revenue" value={currency(labRevenue)} detail={`${registrations.length} recorded registrations`} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         <div className="bg-white rounded-[2.5rem] border border-gray-100 shadow-sm p-8">
           <h3 className="font-bold text-gray-900 mb-8">Revenue Breakdown</h3>
           <RevenueBar label="Doctor Consultations" value={doctorRevenue} percent={doctorPercent} color="bg-sky-500" />
-          <RevenueBar label="Service Lab (Counter)" value={labRevenue} percent={labPercent} color="bg-purple-500" />
         </div>
 
         <div className="bg-gray-900 rounded-[2.5rem] p-8 text-white shadow-xl">
@@ -90,7 +81,7 @@ const AdminRevenue: React.FC<{ user: User }> = () => {
       </div>
       <div className="mt-10 overflow-hidden rounded-3xl border bg-white">
         <div className="border-b p-6"><h2 className="text-xl font-bold">Patient registrations</h2><p className="text-sm text-gray-500">Administrators can correct mandatory patient details. Every change is recorded in the audit log.</p></div>
-        <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="bg-gray-50"><tr><th className="p-4">Patient</th><th className="p-4">Type</th><th className="p-4">Department</th><th className="p-4">Token</th><th className="p-4"></th></tr></thead><tbody>{registrations.map((row) => <React.Fragment key={row.id}><tr className="border-t"><td className="p-4 font-bold">{row.name}<small className="block font-normal">{row.phoneNo} · Age {row.age} · {row.gender}</small><small className="block font-normal">{row.patientId}</small></td><td className="p-4">{row.isFreeCamp ? 'Free camp' : 'General ₹150'}</td><td className="p-4">{row.departmentName}</td><td className="p-4">{row.tokenNumber}</td><td className="p-4"><button type="button" onClick={() => setEditingId(row.id)} className="font-bold text-sky-700">Edit details</button></td></tr>{editingId === row.id && <tr><td colSpan={5} className="p-4"><RegistrationEditor registration={row} departments={departments} onCancel={() => setEditingId(null)} onSaved={(updated) => { setRegistrations((current) => current.map((item) => item.id === updated.id ? updated : item)); setEditingId(null); }} /></td></tr>}</React.Fragment>)}</tbody></table></div>
+        <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="bg-gray-50"><tr><th className="p-4">Patient</th><th className="p-4">Type</th><th className="p-4">Department</th><th className="p-4">Token</th><th className="p-4"></th></tr></thead><tbody>{registrations.map((row) => <React.Fragment key={row.id}><tr className="border-t"><td className="p-4 font-bold">{row.name}<small className="block font-normal">{row.phoneNo} · Age {row.age} · {row.gender}</small><small className="block font-normal">{row.patientId}</small></td><td className="p-4">{row.isFreeCamp ? 'Free camp' : 'Clinic patient'}</td><td className="p-4">{row.departmentName}</td><td className="p-4">{row.tokenNumber}</td><td className="p-4"><button type="button" onClick={() => setEditingId(row.id)} className="font-bold text-sky-700">Edit details</button></td></tr>{editingId === row.id && <tr><td colSpan={5} className="p-4"><RegistrationEditor registration={row} departments={departments} onCancel={() => setEditingId(null)} onSaved={(updated) => { setRegistrations((current) => current.map((item) => item.id === updated.id ? updated : item)); setEditingId(null); }} /></td></tr>}</React.Fragment>)}</tbody></table></div>
       </div>
     </div>
   );
