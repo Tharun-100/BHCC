@@ -129,6 +129,9 @@ class AppointmentSerializer(serializers.ModelSerializer):
     patientId = serializers.CharField(source="patient_id", read_only=True)
     doctorId = serializers.CharField(source="doctor_id")
     patientName = serializers.CharField(source="patient_name")
+    patientMobile = serializers.SerializerMethodField()
+    patientAge = serializers.SerializerMethodField()
+    patientGender = serializers.SerializerMethodField()
     doctorName = serializers.CharField(source="doctor_name")
 
     class Meta:
@@ -137,6 +140,9 @@ class AppointmentSerializer(serializers.ModelSerializer):
             "id",
             "patientId",
             "patientName",
+            "patientMobile",
+            "patientAge",
+            "patientGender",
             "doctorId",
             "doctorName",
             "department",
@@ -165,6 +171,18 @@ class AppointmentSerializer(serializers.ModelSerializer):
 
     def get_isFreeFollowUp(self, obj: Appointment) -> bool:
         return bool(obj.follow_up_of_id and obj.payment_method == "FREE_FOLLOW_UP")
+
+    def get_patientMobile(self, obj: Appointment) -> str:
+        profile = getattr(obj.patient, "profile", None)
+        return getattr(profile, "phone_no", "") or ""
+
+    def get_patientAge(self, obj: Appointment):
+        profile = getattr(obj.patient, "profile", None)
+        return getattr(profile, "age", None)
+
+    def get_patientGender(self, obj: Appointment) -> str:
+        profile = getattr(obj.patient, "profile", None)
+        return getattr(profile, "gender", "") or ""
 
 
 class FeedbackOutSerializer(serializers.Serializer):

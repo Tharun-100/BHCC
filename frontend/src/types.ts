@@ -150,6 +150,9 @@ export interface Appointment {
   id: string;
   patientId: string;
   patientName: string;
+  patientMobile?: string;
+  patientAge?: number | null;
+  patientGender?: string;
   doctorId: string;
   doctorName: string;
   department: string;

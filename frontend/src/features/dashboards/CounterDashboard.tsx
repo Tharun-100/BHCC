@@ -29,6 +29,7 @@ const CounterDashboard: React.FC<{ user: User }> = () => {
   const [matches, setMatches] = React.useState<PatientLookupResult[]>([]);
   const [form, setForm] = React.useState(emptyForm);
   const [receipt, setReceipt] = React.useState<LabRegistration | null>(null);
+  const [consultationReceipt, setConsultationReceipt] = React.useState<Appointment | null>(null);
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [message, setMessage] = React.useState('');
   const [saving, setSaving] = React.useState(false);
@@ -87,6 +88,34 @@ const CounterDashboard: React.FC<{ user: User }> = () => {
     void recordReceiptPrint(receipt.id).catch(() => setMessage('Receipt opened, but its print audit could not be recorded.'));
   };
 
+  const printConsultationReceipt = (appointment: Appointment) => {
+    const printWindow = window.open('', '_blank', 'width=420,height=650');
+    if (!printWindow) { setMessage('Allow pop-ups for this website to print the consultation receipt.'); return; }
+    const paymentMode = appointment.paymentMethod === 'CASH' ? 'Cash' : appointment.paymentMethod === 'FREE_FOLLOW_UP' ? 'Free Follow-up' : 'Paytm POS';
+    const paidAmount = appointment.paymentMethod === 'FREE_FOLLOW_UP' ? 0 : appointment.fee;
+    const formattedDate = new Date(`${appointment.date}T00:00:00`).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const rows = [
+      ['Patient Name :', appointment.patientName],
+      ['Mobile :', appointment.patientMobile || '—'],
+      ['Age / Gender :', [appointment.patientAge, appointment.patientGender].filter((value) => value !== null && value !== undefined && value !== '').join(' / ') || '—'],
+      ['Patient ID :', appointment.patientId],
+      ['Department :', appointment.department],
+      ['Doctor Name :', appointment.doctorName],
+      ['Date :', formattedDate],
+      ['Time :', appointment.time],
+      ['Token :', appointment.tokenNumber || '—'],
+    ];
+    printWindow.document.write(`<!doctype html><html><head><meta charset="UTF-8"><title>Consultation receipt</title><style>
+      *{box-sizing:border-box;font-weight:900!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}html,body{margin:0;width:80mm;background:#eee;color:#000}
+      body{padding:20px;font-family:"Courier New",Courier,monospace;font-size:13px;font-weight:900;-webkit-text-stroke:.18px #000}.receipt{width:80mm;margin:0;padding:4mm 3mm;background:#fff}
+      .center{text-align:center}.hospital-name{font-size:16px;line-height:18px;margin-bottom:5px}.title{font-size:14px;line-height:17px;margin-bottom:8px}.line{border-top:1px dashed #000;margin:7px 0}
+      .field{display:flex;width:100%;line-height:20px}.label{flex:0 0 46%;text-align:left;white-space:nowrap}.value{flex:1;min-width:0;text-align:right;overflow-wrap:anywhere}.paid{font-size:14px;line-height:22px}.footer{margin-top:8px;text-align:center;font-size:13px}
+      @media print{html,body{width:80mm;margin:0;padding:0;background:#fff}.receipt{width:80mm;margin:0;padding:4mm 3mm}}
+    </style></head><body><section class="receipt"><div class="center hospital-name">BHAKTIVEDANTA<br>HEALTH CARE CENTER</div><div class="center title">CONSULTATION RECEIPT</div><div class="line"></div>${rows.map(([label, value]) => `<div class="field"><div class="label">${label}</div><div class="value">${escapeReceiptValue(value)}</div></div>`).join('')}<div class="line"></div><div class="field paid"><div class="label">Consultation Paid :</div><div class="value">₹${paidAmount.toLocaleString('en-IN')}</div></div><div class="field"><div class="label">Payment Mode :</div><div class="value">${escapeReceiptValue(paymentMode)}</div></div>${appointment.paymentReference ? `<div class="field"><div class="label">Reference :</div><div class="value">${escapeReceiptValue(appointment.paymentReference)}</div></div>` : ''}<div class="line"></div><div class="footer">Hare Krishna!</div></section></body></html>`);
+    printWindow.document.close(); printWindow.addEventListener('afterprint', () => printWindow.close(), { once: true });
+    window.setTimeout(() => { const element = printWindow.document.querySelector('.receipt') as HTMLElement | null; const height = Math.max(55, Math.ceil((element?.scrollHeight || 0) * 25.4 / 96) + 1); const style = printWindow.document.createElement('style'); style.textContent = `@page{size:80mm ${height}mm;margin:0}`; printWindow.document.head.appendChild(style); printWindow.focus(); printWindow.print(); }, 250);
+  };
+
   const recordPosPayment = async (appointment: Appointment) => {
     const reference = window.prompt(`Enter the Paytm POS receipt/reference for ${appointment.patientName}.\nAmount: ₹${appointment.fee}`, appointment.paymentReference || '');
     if (reference === null) return;
@@ -94,6 +123,7 @@ const CounterDashboard: React.FC<{ user: User }> = () => {
     try {
       const updated = await recordManualPosPayment(appointment.id, reference.trim());
       setAppointments((current) => current.map((row) => row.id === updated.id ? updated : row));
+      setConsultationReceipt(updated);
       setMessage(`Payment recorded for ${updated.patientName}. Reference: ${updated.paymentReference}`);
     } catch (error: any) { setMessage(error?.message || 'Could not record the POS payment.'); }
   };
@@ -103,6 +133,7 @@ const CounterDashboard: React.FC<{ user: User }> = () => {
     try {
       const updated = await recordCashPayment(appointment.id);
       setAppointments((current) => current.map((row) => row.id === updated.id ? updated : row));
+      setConsultationReceipt(updated);
       setMessage(`Cash payment recorded for ${updated.patientName}.`);
     } catch (error: any) { setMessage(error?.message || 'Could not record the cash payment.'); }
   };
@@ -111,6 +142,7 @@ const CounterDashboard: React.FC<{ user: User }> = () => {
     try {
       const updated = checkOnly ? await checkPaytmPosPayment(appointment.id) : await initiatePaytmPosPayment(appointment.id);
       setAppointments((current) => current.map((row) => row.id === updated.id ? updated : row));
+      if (updated.paymentStatus === 'Confirmed') setConsultationReceipt(updated);
       setMessage(checkOnly ? `Paytm status: ${updated.paymentStatus}` : 'Payment sent to the Paytm POS. Complete it on the machine, then check status.');
     } catch (error: any) { setMessage(error?.message || 'Paytm POS request failed. Manual receipt entry remains available.'); }
   };
@@ -137,7 +169,8 @@ const CounterDashboard: React.FC<{ user: User }> = () => {
     }
     try {
       if (bookingPaymentMethod === 'CASH') {
-        await recordCashPayment(appointmentId);
+        const paidAppointment = await recordCashPayment(appointmentId);
+        setConsultationReceipt(paidAppointment);
         setMessage('Appointment booked and cash payment recorded successfully.');
       } else {
         await initiatePaytmPosPayment(appointmentId);
@@ -170,6 +203,7 @@ const CounterDashboard: React.FC<{ user: User }> = () => {
       <div className="overflow-hidden rounded-3xl border bg-white"><div className="flex items-center gap-3 border-b p-6"><Users className="text-sky-600" /><div><h2 className="font-bold">Today’s registrations</h2><p className="text-xs text-gray-500">This operational list starts empty each day. Historical records remain stored.</p></div></div><div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="bg-gray-50"><tr><th className="p-4">Patient</th><th className="p-4">Type</th><th className="p-4">Department</th><th className="p-4">Token</th><th className="p-4"></th></tr></thead><tbody>{todayRegistrations.map((row) => <React.Fragment key={row.id}><tr className="border-t"><td className="p-4 font-bold">{row.name}<small className="block font-normal">{row.phoneNo} · Age {row.age} · {row.gender}</small><small className="block font-normal">{row.patientId}</small></td><td className="p-4">{row.isFreeCamp ? 'Free camp' : 'Clinic patient'}</td><td className="p-4">{row.departmentName}</td><td className="p-4 font-bold text-sky-700">{row.tokenNumber}</td><td className="p-4"><div className="flex gap-3"><button onClick={() => setEditingId(row.id)} className="font-bold text-sky-700">Edit</button>{row.isFreeCamp && <button onClick={() => setReceipt(row)} className="font-bold text-sky-700">Receipt</button>}</div></td></tr>{editingId === row.id && <tr><td colSpan={5} className="p-3"><RegistrationEditor registration={row} departments={row.isFreeCamp ? (camps.find((item) => item.id === row.campId)?.departments || departments) : departments} onCancel={() => setEditingId(null)} onSaved={(updated) => { setRegistrations((current) => current.map((item) => item.id === updated.id ? updated : item)); setEditingId(null); setMessage('Patient details updated successfully.'); }} /></td></tr>}</React.Fragment>)}{todayRegistrations.length===0&&<tr><td colSpan={5} className="p-8 text-center text-gray-500">No patients registered today.</td></tr>}</tbody></table></div></div>
     </div>
     {receipt && <div className="mt-6 rounded-3xl border bg-white p-6"><h2 className="text-xl font-bold">Receipt ready</h2><p>{receipt.name} · {receipt.departmentName}</p><button onClick={printReceipt} className="mt-4 flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-3 font-bold text-white"><Printer />Print 3-inch receipt</button></div>}
+    {consultationReceipt && <div className="mt-6 rounded-3xl border border-emerald-200 bg-emerald-50 p-6"><h2 className="text-xl font-bold text-emerald-900">Consultation receipt ready</h2><p className="mt-1 text-sm text-emerald-800">{consultationReceipt.patientName} · {consultationReceipt.doctorName} · ₹{consultationReceipt.fee.toLocaleString('en-IN')}</p><button type="button" onClick={() => printConsultationReceipt(consultationReceipt)} className="mt-4 flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-3 font-bold text-white"><Printer />Print consultation receipt</button></div>}
     <section className="mt-8 overflow-hidden rounded-3xl border bg-white">
       <form onSubmit={bookConsultation} className="border-b bg-slate-50 p-6">
         <div className="mb-6"><h2 className="text-2xl font-black">Book doctor at counter</h2><p className="text-sm text-gray-500">Follow the same booking sequence as the patient portal, then collect Cash or Online / Paytm POS payment.</p></div>
@@ -183,7 +217,7 @@ const CounterDashboard: React.FC<{ user: User }> = () => {
       </form>
       <div className="border-b p-6"><h2 className="text-xl font-bold">Today’s consultation payments</h2><p className="text-sm text-gray-500">Daily department tokens reset from 001. Only today’s appointments appear here; historical payments remain stored.</p></div>
       <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="bg-gray-50"><tr><th className="p-4">Token</th><th className="p-4">Appointment</th><th className="p-4">Doctor</th><th className="p-4">Amount</th><th className="p-4">Payment</th><th className="p-4">Action</th></tr></thead><tbody>
-        {todayAppointments.slice(0, 100).map((row) => <tr key={row.id} className="border-t"><td className="p-4 font-black text-sky-700">{row.tokenNumber || '—'}</td><td className="p-4"><b>{row.patientName}</b><small className="block">{row.date} · {row.time}</small></td><td className="p-4">{row.doctorName}<small className="block">{row.department}</small></td><td className="p-4 font-bold">₹{row.fee.toLocaleString('en-IN')}</td><td className="p-4">{row.paymentStatus || 'Pending'}{row.paymentMethod && <small className="block font-bold">{row.paymentMethod === 'CASH' ? 'Cash' : 'Online / Paytm'}</small>}{row.paymentReference && <small className="block font-mono">{row.paymentReference}</small>}</td><td className="p-4"><div className="flex flex-wrap gap-2">{row.paymentStatus === 'Confirmed' ? <span className="font-bold text-green-700">Payment recorded</span> : <><button type="button" onClick={() => recordCash(row)} className="rounded-lg bg-emerald-600 px-3 py-2 font-bold text-white">Cash</button>{row.paymentMethod === 'PAYTM_POS_AUTOMATIC' ? <button type="button" onClick={() => runAutomaticPos(row, true)} className="rounded-lg bg-amber-600 px-3 py-2 font-bold text-white">Check Paytm</button> : <button type="button" onClick={() => runAutomaticPos(row)} className="rounded-lg bg-sky-600 px-3 py-2 font-bold text-white">Online / Paytm</button>}<button type="button" onClick={() => recordPosPayment(row)} className="rounded-lg border px-3 py-2 font-bold">Enter Paytm receipt</button></>}</div></td></tr>)}
+        {todayAppointments.slice(0, 100).map((row) => <tr key={row.id} className="border-t"><td className="p-4 font-black text-sky-700">{row.tokenNumber || '—'}</td><td className="p-4"><b>{row.patientName}</b><small className="block">{row.date} · {row.time}</small></td><td className="p-4">{row.doctorName}<small className="block">{row.department}</small></td><td className="p-4 font-bold">₹{row.fee.toLocaleString('en-IN')}</td><td className="p-4">{row.paymentStatus || 'Pending'}{row.paymentMethod && <small className="block font-bold">{row.paymentMethod === 'CASH' ? 'Cash' : row.paymentMethod === 'FREE_FOLLOW_UP' ? 'Free Follow-up' : 'Online / Paytm'}</small>}{row.paymentReference && <small className="block font-mono">{row.paymentReference}</small>}</td><td className="p-4"><div className="flex flex-wrap gap-2">{row.paymentStatus === 'Confirmed' || row.paymentStatus === 'Free Follow-up' ? <><span className="self-center font-bold text-green-700">{row.paymentStatus === 'Confirmed' ? 'Payment recorded' : 'No payment required'}</span><button type="button" onClick={() => printConsultationReceipt(row)} className="flex items-center gap-1 rounded-lg border px-3 py-2 font-bold"><Printer size={16}/>Print receipt</button></> : <><button type="button" onClick={() => recordCash(row)} className="rounded-lg bg-emerald-600 px-3 py-2 font-bold text-white">Cash</button>{row.paymentMethod === 'PAYTM_POS_AUTOMATIC' ? <button type="button" onClick={() => runAutomaticPos(row, true)} className="rounded-lg bg-amber-600 px-3 py-2 font-bold text-white">Check Paytm</button> : <button type="button" onClick={() => runAutomaticPos(row)} className="rounded-lg bg-sky-600 px-3 py-2 font-bold text-white">Online / Paytm</button>}<button type="button" onClick={() => recordPosPayment(row)} className="rounded-lg border px-3 py-2 font-bold">Enter Paytm receipt</button></>}</div></td></tr>)}
         {todayAppointments.length === 0 && <tr><td colSpan={6} className="p-8 text-center text-gray-500">No appointments or payments for today.</td></tr>}
       </tbody></table></div>
     </section>
