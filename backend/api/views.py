@@ -73,9 +73,9 @@ def _follow_up_error(original: Appointment, patient: User, doctor: User, appoint
         return "The free follow-up must be for the same patient and doctor."
     if original.status != Appointment.Status.COMPLETED or original.payment_status != "Confirmed" or original.fee <= 0:
         return "Only a completed, paid consultation qualifies for a free follow-up."
-    expiry_date = original.date + timedelta(days=7)
+    expiry_date = original.date + timedelta(days=14)
     if appointment_date < original.date or appointment_date > expiry_date or timezone.localdate() > expiry_date:
-        return "The seven-day free follow-up period has expired."
+        return "The fourteen-day free follow-up period has expired."
     if original.follow_ups.exclude(
         status__in=[Appointment.Status.CANCELLED, Appointment.Status.NO_SHOW, Appointment.Status.RESCHEDULED]
     ).exists():
@@ -91,7 +91,7 @@ def _consultation_financials(request, role: str | None, base_fee: int, is_free: 
     except (TypeError, ValueError):
         return None, Response({"detail": "Concession percentage must be a whole number."}, status=status.HTTP_400_BAD_REQUEST)
     reason = str(request.data.get("concessionReason") or "").strip()
-    maximum = 20 if role == UserRole.COUNTER else 100 if role == UserRole.ADMIN else 0
+    maximum = 100 if role in {UserRole.COUNTER, UserRole.ADMIN} else 0
     if not 0 <= percent <= maximum:
         return None, Response({"detail": f"This account may grant a concession between 0% and {maximum}%."}, status=status.HTTP_403_FORBIDDEN)
     if percent and len(reason) < 3:
@@ -801,6 +801,15 @@ def appointments(request):
             patient = get_object_or_404(User.objects.select_related("profile"), pk=request.data.get("patientId"), profile__role=UserRole.PATIENT)
         doctor_out = user_to_out(doctor)
         base_fee = int(doctor.profile.fee or 0)
+        historical = bool(request.data.get("recordedAfterService", False))
+        historical_reason = str(request.data.get("historicalEntryReason") or "").strip()
+        if historical:
+            if role not in {UserRole.COUNTER, UserRole.ADMIN}:
+                return Response({"detail": "Only administrators and counter staff can record a past consultation."}, status=status.HTTP_403_FORBIDDEN)
+            if ser.validated_data["date"] > timezone.localdate():
+                return Response({"detail": "A past-consultation entry cannot use a future date."}, status=status.HTTP_400_BAD_REQUEST)
+            if len(historical_reason) < 3:
+                return Response({"detail": "Explain why this consultation is being entered after service."}, status=status.HTTP_400_BAD_REQUEST)
         try:
             with transaction.atomic():
                 follow_up = None
@@ -831,10 +840,14 @@ def appointments(request):
                     concession_granted_at=timezone.now() if financials["percent"] else None,
                     doctor_share_percent=50,
                     doctor_share_amount=financials["share"],
+                    recorded_after_service=historical,
+                    historical_entry_reason=historical_reason if historical else "",
+                    historical_entry_by=request.user if historical else None,
+                    historical_entry_at=timezone.now() if historical else None,
                     department_sequence=sequence,
                     token_number=token_number,
                     follow_up_of=follow_up,
-                    status=Appointment.Status.UPCOMING,
+                    status=Appointment.Status.COMPLETED if historical else Appointment.Status.UPCOMING,
                     payment_id=ser.validated_data.get("payment_id", ""),
                     payment_status="Free Follow-up" if follow_up else ("Pay at Counter" if role in {UserRole.COUNTER, UserRole.ADMIN} else "Pending"),
                     payment_method="FREE_FOLLOW_UP" if follow_up else "",
@@ -877,6 +890,19 @@ def appointment_detail(request, pk: int):
     appointment = get_object_or_404(Appointment.objects.select_related("doctor__profile", "patient__profile"), pk=pk)
     action = str(request.data.get("action") or "").strip().lower()
     next_status = str(request.data.get("status") or "").strip()
+
+    if action == "mark_consulted":
+        if role not in {UserRole.ADMIN, UserRole.COUNTER, UserRole.DOCTOR} or (role == UserRole.DOCTOR and appointment.doctor_id != request.user.id):
+            return Response({"detail": "You cannot confirm this consultation."}, status=status.HTTP_403_FORBIDDEN)
+        if appointment.status in {Appointment.Status.CANCELLED, Appointment.Status.RESCHEDULED}:
+            return Response({"detail": "Cancelled or rescheduled appointments cannot be marked as consulted."}, status=status.HTTP_409_CONFLICT)
+        correction_reason = str(request.data.get("reason") or "").strip()
+        if appointment.status == Appointment.Status.NO_SHOW and len(correction_reason) < 3:
+            return Response({"detail": "Enter a correction reason for this no-show record."}, status=status.HTTP_400_BAD_REQUEST)
+        appointment.status = Appointment.Status.COMPLETED
+        appointment.save(update_fields=["status", "updated_at"])
+        record_admin_action(request, action="CONSULTATION_CONFIRMED", target_type="APPOINTMENT", target_id=appointment.id, summary=f"Consultation marked completed. Reason: {correction_reason or 'Routine completion confirmation'}")
+        return Response(AppointmentSerializer(appointment).data)
 
     if action == "reschedule":
         if role not in {UserRole.ADMIN, UserRole.COUNTER}:
@@ -1296,7 +1322,7 @@ def availability(request):
                 end = end_hour * 60 + end_minute
                 while current < end:
                     configured_slots.append(f"{current // 60:02d}:{current % 60:02d}")
-                    current += 15
+                    current += 6
         booked_slots = set(Appointment.objects.filter(doctor=doctor, date=date_str).exclude(
             status__in=[Appointment.Status.CANCELLED, Appointment.Status.NO_SHOW, Appointment.Status.RESCHEDULED]
         ).values_list("time", flat=True))
@@ -1319,8 +1345,26 @@ def availability(request):
     if role == UserRole.DOCTOR and request.user.id != doctor_id:
         return Response({"detail": "Forbidden."}, status=status.HTTP_403_FORBIDDEN)
 
+    slots = ser.validated_data["slots"]
+    normalized_slots = []
+    hourly_counts = {}
+    for slot in slots:
+        try:
+            hour, minute = map(int, str(slot).split(":"))
+        except (TypeError, ValueError):
+            return Response({"detail": "Every slot must use HH:MM format."}, status=status.HTTP_400_BAD_REQUEST)
+        if not (0 <= hour <= 23 and 0 <= minute <= 59):
+            return Response({"detail": "Every slot must contain a valid time."}, status=status.HTTP_400_BAD_REQUEST)
+        normalized = f"{hour:02d}:{minute:02d}"
+        normalized_slots.append(normalized)
+        hourly_counts[hour] = hourly_counts.get(hour, 0) + 1
+    if len(set(normalized_slots)) != len(normalized_slots):
+        return Response({"detail": "Duplicate consultation slots are not allowed."}, status=status.HTTP_400_BAD_REQUEST)
+    if any(count > 10 for count in hourly_counts.values()):
+        return Response({"detail": "A doctor can have at most 10 consultation slots in one hour."}, status=status.HTTP_400_BAD_REQUEST)
+
     obj, _ = DoctorAvailability.objects.update_or_create(
-        doctor_id=doctor_id, date=date_val, defaults={"slots": ser.validated_data["slots"]}
+        doctor_id=doctor_id, date=date_val, defaults={"slots": sorted(normalized_slots)}
     )
     return Response({"ok": True})
 
@@ -1904,9 +1948,14 @@ def admin_update_account(request, pk: int):
 
 
 @api_view(["POST"])
-@permission_classes([IsAuthenticated, IsAdmin])
+@permission_classes([IsAuthenticated])
 def admin_reset_account_password(request, pk: int):
+    role = getattr(getattr(request.user, "profile", None), "role", None)
+    if role not in {UserRole.ADMIN, UserRole.COUNTER}:
+        return Response({"detail": "Only administrators and counter staff can reset patient passwords."}, status=status.HTTP_403_FORBIDDEN)
     user = get_object_or_404(User.objects.select_related("profile"), pk=pk)
+    if role == UserRole.COUNTER and user.profile.role != UserRole.PATIENT:
+        return Response({"detail": "Counter staff can reset patient passwords only."}, status=status.HTTP_403_FORBIDDEN)
     if user.pk == request.user.pk:
         return Response({"detail": "Use your own profile to change the current administrator password."}, status=status.HTTP_400_BAD_REQUEST)
     new_password = str(request.data.get("password") or "")
@@ -1918,8 +1967,9 @@ def admin_reset_account_password(request, pk: int):
     user.is_active = True
     user.save(update_fields=["password", "is_active"])
     identity = user.email or user.username
-    transaction.on_commit(lambda: send_admin_notification(event="Account password reset", summary=f"An administrator reset and reactivated the {user.profile.role} account {identity}."))
-    record_admin_action(request, action="PASSWORD_RESET", target_type="USER", target_id=user.id, summary=f"Administrator reset the {user.profile.role} account password.")
+    actor = "An administrator" if role == UserRole.ADMIN else "Counter staff"
+    transaction.on_commit(lambda: send_admin_notification(event="Account password reset", summary=f"{actor} reset and reactivated the {user.profile.role} account {identity}."))
+    record_admin_action(request, action="PASSWORD_RESET", target_type="USER", target_id=user.id, summary=f"{actor} reset the {user.profile.role} account password.")
     return Response({"ok": True, "user": {**user_to_out(user), "isActive": True}})
 
 

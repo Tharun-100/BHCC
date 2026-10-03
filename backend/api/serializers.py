@@ -155,6 +155,8 @@ class AppointmentSerializer(serializers.ModelSerializer):
             "concessionReason",
             "doctorSharePercent",
             "doctorShareAmount",
+            "recordedAfterService",
+            "historicalEntryReason",
             "tokenNumber",
             "followUpOf",
             "isFreeFollowUp",
@@ -183,6 +185,8 @@ class AppointmentSerializer(serializers.ModelSerializer):
     concessionReason = serializers.CharField(source="concession_reason", required=False, allow_blank=True)
     doctorSharePercent = serializers.IntegerField(source="doctor_share_percent", read_only=True)
     doctorShareAmount = serializers.IntegerField(source="doctor_share_amount", read_only=True)
+    recordedAfterService = serializers.BooleanField(source="recorded_after_service", read_only=True)
+    historicalEntryReason = serializers.CharField(source="historical_entry_reason", read_only=True)
     tokenNumber = serializers.CharField(source="token_number", read_only=True)
     followUpOf = serializers.CharField(source="follow_up_of_id", required=False, allow_null=True)
     isFreeFollowUp = serializers.SerializerMethodField()

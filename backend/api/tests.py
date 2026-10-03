@@ -52,6 +52,21 @@ class ClinicOperationsTests(TestCase):
         response = client.get(f"/api/availability/?doctor_id={self.doctor.id}&date={appointment_date.isoformat()}")
         self.assertEqual(response.data["slots"], ["10:00", "10:15"])
 
+    def test_weekly_schedule_generates_six_minute_slots_and_caps_custom_hour(self):
+        appointment_date = date.today() + timedelta(days=2)
+        profile = self.doctor.profile
+        profile.weekly_schedule = {appointment_date.strftime("%A"): [{"start":"10:00", "end":"11:00"}]}
+        profile.save(update_fields=["weekly_schedule"])
+        client = APIClient(); client.force_authenticate(self.admin)
+        generated = client.get(f"/api/availability/?doctor_id={self.doctor.id}&date={appointment_date.isoformat()}")
+        self.assertEqual(generated.status_code, 200)
+        self.assertEqual(generated.data["slots"], ["10:00", "10:06", "10:12", "10:18", "10:24", "10:30", "10:36", "10:42", "10:48", "10:54"])
+
+        too_many = [f"10:{minute:02d}" for minute in range(11)]
+        rejected = client.put("/api/availability/", {"doctorId":str(self.doctor.id), "date":appointment_date, "slots":too_many}, format="json")
+        self.assertEqual(rejected.status_code, 400)
+        self.assertIn("at most 10", rejected.data["detail"])
+
     def test_appointment_department_tokens_increment_and_reset_daily(self):
         client = APIClient(); client.force_authenticate(self.counter)
         tomorrow = date.today() + timedelta(days=1)
@@ -64,14 +79,14 @@ class ClinicOperationsTests(TestCase):
         self.assertEqual(Appointment.objects.get(pk=second.data["id"]).token_number, "DEN-002")
         self.assertEqual(Appointment.objects.get(pk=next_day.data["id"]).token_number, "DEN-001")
 
-    def test_one_free_follow_up_with_same_doctor_within_seven_days(self):
+    def test_one_free_follow_up_with_same_doctor_within_fourteen_days(self):
         original = Appointment.objects.create(
             patient=self.patient, doctor=self.doctor, patient_name="Patient", doctor_name="Doctor",
             department="Dental", date=date.today(), time="09:00", fee=500,
             status=Appointment.Status.COMPLETED, payment_status="Confirmed", payment_method="CASH",
         )
         client = APIClient(); client.force_authenticate(self.counter)
-        payload = {"patientId":str(self.patient.id), "patientName":"Patient", "doctorId":str(self.doctor.id), "doctorName":"Doctor", "department":"Dental", "date":date.today()+timedelta(days=2), "time":"09:15", "fee":500, "followUpOf":str(original.id)}
+        payload = {"patientId":str(self.patient.id), "patientName":"Patient", "doctorId":str(self.doctor.id), "doctorName":"Doctor", "department":"Dental", "date":date.today()+timedelta(days=14), "time":"09:15", "fee":500, "followUpOf":str(original.id)}
         response = client.post("/api/appointments/", payload, format="json")
         self.assertEqual(response.status_code, 201)
         self.assertTrue(response.data["isFreeFollowUp"])
@@ -87,7 +102,7 @@ class ClinicOperationsTests(TestCase):
     def test_expired_or_unpaid_consultation_does_not_qualify_for_follow_up(self):
         original = Appointment.objects.create(
             patient=self.patient, doctor=self.doctor, patient_name="Patient", doctor_name="Doctor",
-            department="Dental", date=date.today()-timedelta(days=8), time="09:00", fee=500,
+            department="Dental", date=date.today()-timedelta(days=15), time="09:00", fee=500,
             status=Appointment.Status.COMPLETED, payment_status="Confirmed",
         )
         client = APIClient(); client.force_authenticate(self.counter)
@@ -239,11 +254,56 @@ class ClinicOperationsTests(TestCase):
         self.assertEqual(appointment.concession_granted_by, self.counter)
         self.assertIsNotNone(appointment.concession_granted_at)
 
-    def test_counter_cannot_exceed_concession_policy_or_omit_reason(self):
+    def test_counter_can_grant_up_to_full_concession_but_must_supply_reason(self):
         client = APIClient(); client.force_authenticate(self.counter)
         base = {"patientId":str(self.patient.id), "patientName":"Patient", "doctorId":str(self.doctor.id), "doctorName":"Doctor", "department":"Dental", "date":date.today()+timedelta(days=4), "time":"11:00"}
-        self.assertEqual(client.post("/api/appointments/", {**base, "concessionPercent":21, "concessionReason":"Too high"}, format="json").status_code, 403)
+        full = client.post("/api/appointments/", {**base, "concessionPercent":100, "concessionReason":"Fully waived by clinic"}, format="json")
+        self.assertEqual(full.status_code, 201)
+        appointment = Appointment.objects.get(pk=full.data["id"])
+        self.assertEqual(appointment.fee, 0)
+        self.assertEqual(appointment.doctor_share_amount, 0)
+        base["time"] = "11:15"
+        self.assertEqual(client.post("/api/appointments/", {**base, "concessionPercent":101, "concessionReason":"Too high"}, format="json").status_code, 400)
         self.assertEqual(client.post("/api/appointments/", {**base, "concessionPercent":10}, format="json").status_code, 400)
+
+    def test_counter_can_reset_patient_password_but_not_staff_password(self):
+        client = APIClient(); client.force_authenticate(self.counter)
+        response = client.post(f"/api/management/accounts/{self.patient.id}/reset-password/", {"password":"New-secure-patient-password-95"}, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.patient.refresh_from_db()
+        self.assertTrue(self.patient.check_password("New-secure-patient-password-95"))
+        forbidden = client.post(f"/api/management/accounts/{self.doctor.id}/reset-password/", {"password":"New-secure-doctor-password-95"}, format="json")
+        self.assertEqual(forbidden.status_code, 403)
+
+    def test_counter_can_record_a_missed_past_consultation_and_payment(self):
+        client = APIClient(); client.force_authenticate(self.counter)
+        yesterday = date.today() - timedelta(days=1)
+        response = client.post("/api/appointments/", {
+            "patientId":str(self.patient.id), "patientName":"Patient", "doctorId":str(self.doctor.id), "doctorName":"Doctor",
+            "department":"Dental", "date":yesterday, "time":"11:00", "recordedAfterService":True,
+            "historicalEntryReason":"Consultation completed yesterday but counter entry was missed",
+        }, format="json")
+        self.assertEqual(response.status_code, 201)
+        appointment = Appointment.objects.get(pk=response.data["id"])
+        self.assertEqual(appointment.status, Appointment.Status.COMPLETED)
+        self.assertTrue(appointment.recorded_after_service)
+        self.assertEqual(appointment.historical_entry_by, self.counter)
+        paid = client.patch(f"/api/appointments/{appointment.id}/manual-pos-payment/", {"method":"CASH"}, format="json")
+        self.assertEqual(paid.status_code, 200)
+        self.assertEqual(paid.data["paymentStatus"], "Confirmed")
+
+    def test_counter_can_correct_paid_no_show_to_completed_with_reason(self):
+        appointment = Appointment.objects.create(
+            patient=self.patient, doctor=self.doctor, patient_name="Patient", doctor_name="Doctor", department="Dental",
+            date=date.today()-timedelta(days=1), time="12:00", fee=500, base_consultation_fee=500,
+            doctor_share_amount=250, status=Appointment.Status.NO_SHOW, payment_status="Confirmed", payment_method="CASH",
+        )
+        client = APIClient(); client.force_authenticate(self.counter)
+        missing_reason = client.patch(f"/api/appointments/{appointment.id}/", {"action":"mark_consulted"}, format="json")
+        self.assertEqual(missing_reason.status_code, 400)
+        corrected = client.patch(f"/api/appointments/{appointment.id}/", {"action":"mark_consulted", "reason":"Patient was consulted; completion was missed"}, format="json")
+        self.assertEqual(corrected.status_code, 200)
+        self.assertEqual(corrected.data["status"], "Completed")
 
     def test_registration_requires_demographics_and_existing_lookup_prefills(self):
         client = APIClient(); client.force_authenticate(self.counter)

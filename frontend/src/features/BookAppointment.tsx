@@ -120,7 +120,7 @@ const BookAppointment: React.FC = () => {
     setStep(3);
   };
 
-  const eligibleFollowUp = useMemo(() => { if(!selectedDoc||!selectedDate)return undefined; const target=new Date(`${selectedDate}T00:00:00`); return patientAppointments.find((row)=>{const original=new Date(`${row.date}T00:00:00`);const expiry=new Date(original);expiry.setDate(expiry.getDate()+7);const alreadyUsed=patientAppointments.some((candidate)=>candidate.followUpOf===row.id&&!['Cancelled','NoShow','Rescheduled'].includes(candidate.status));return row.doctorId===selectedDoc.id&&row.status==='Completed'&&row.paymentStatus==='Confirmed'&&row.fee>0&&target>=original&&target<=expiry&&!alreadyUsed;}); },[patientAppointments,selectedDoc,selectedDate]);
+  const eligibleFollowUp = useMemo(() => { if(!selectedDoc||!selectedDate)return undefined; const target=new Date(`${selectedDate}T00:00:00`); return patientAppointments.find((row)=>{const original=new Date(`${row.date}T00:00:00`);const expiry=new Date(original);expiry.setDate(expiry.getDate()+14);const alreadyUsed=patientAppointments.some((candidate)=>candidate.followUpOf===row.id&&!['Cancelled','NoShow','Rescheduled'].includes(candidate.status));return row.doctorId===selectedDoc.id&&row.status==='Completed'&&row.paymentStatus==='Confirmed'&&row.fee>0&&target>=original&&target<=expiry&&!alreadyUsed;}); },[patientAppointments,selectedDoc,selectedDate]);
 
   const handleDateAndSlotConfirm = () => {
     if (selectedDate && selectedSlot && selectedDoc?.fee) {
@@ -440,7 +440,7 @@ const BookAppointment: React.FC = () => {
 
                     <hr className="border-sky-100 my-4" />
 
-                    {selectedFollowUpId && <div className="rounded-2xl bg-green-100 p-4 text-green-800"><b>Free seven-day follow-up applied</b><p className="mt-1 text-xs">This is the one free follow-up for your completed consultation with the same doctor.</p></div>}
+                    {selectedFollowUpId && <div className="rounded-2xl bg-green-100 p-4 text-green-800"><b>Free fourteen-day follow-up applied</b><p className="mt-1 text-xs">This is the one free follow-up for your completed consultation with the same doctor.</p></div>}
                     <div className="flex justify-between items-center">
                       <span className="text-gray-500 font-medium">Consultation Fee</span>
                       <span className="font-medium text-gray-800">{selectedFollowUpId ? 'Free' : `Rs. ${selectedDoc?.fee}`}</span>

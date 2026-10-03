@@ -113,6 +113,12 @@ class Appointment(models.Model):
     concession_granted_at = models.DateTimeField(null=True, blank=True)
     doctor_share_percent = models.PositiveSmallIntegerField(default=50)
     doctor_share_amount = models.PositiveIntegerField(default=0)
+    recorded_after_service = models.BooleanField(default=False)
+    historical_entry_reason = models.TextField(blank=True, default="")
+    historical_entry_by = models.ForeignKey(
+        User, on_delete=models.PROTECT, null=True, blank=True, related_name="historically_recorded_appointments"
+    )
+    historical_entry_at = models.DateTimeField(null=True, blank=True)
     department_sequence = models.PositiveIntegerField(null=True, blank=True)
     token_number = models.CharField(max_length=30, blank=True, default="")
     follow_up_of = models.ForeignKey(

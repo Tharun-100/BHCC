@@ -172,7 +172,7 @@ const DoctorAvailabilityManager: React.FC<AvailabilityManagerProps> = ({ doctor,
         <div>
           <h4 className="font-bold text-amber-900">Important Note</h4>
           <p className="text-sm text-amber-800 leading-relaxed">
-            Patient booking slots are generated from these weekly ranges in 15-minute intervals. Existing booked appointments remain unchanged.
+            Patient booking slots are generated from these weekly ranges in 6-minute intervals, with an upper limit of 10 consultations per hour. Existing booked appointments remain unchanged.
           </p>
         </div>
       </div>

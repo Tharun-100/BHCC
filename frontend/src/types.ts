@@ -165,6 +165,8 @@ export interface Appointment {
   concessionReason?: string;
   doctorSharePercent?: number;
   doctorShareAmount?: number;
+  recordedAfterService?: boolean;
+  historicalEntryReason?: string;
   tokenNumber?: string;
   followUpOf?: string | null;
   isFreeFollowUp?: boolean;

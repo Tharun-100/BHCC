@@ -68,7 +68,7 @@ export const createAppointment = async (payload: NewAppointmentInput): Promise<s
   return created.id;
 };
 
-export const createCounterAppointment = async (payload: {patientId:string; doctorId:string; date:string; time:string; followUpOf?:string; concessionPercent?:number; concessionReason?:string}): Promise<{id:string;isFreeFollowUp:boolean}> => {
+export const createCounterAppointment = async (payload: {patientId:string; doctorId:string; date:string; time:string; followUpOf?:string; concessionPercent?:number; concessionReason?:string; recordedAfterService?:boolean; historicalEntryReason?:string}): Promise<{id:string;isFreeFollowUp:boolean}> => {
   const token = authTokenOrThrow();
   const appointment = {
     patientId: payload.patientId,
@@ -78,6 +78,8 @@ export const createCounterAppointment = async (payload: {patientId:string; docto
     ...(payload.followUpOf ? { followUpOf: payload.followUpOf } : {}),
     concessionPercent: payload.followUpOf ? 0 : (payload.concessionPercent || 0),
     concessionReason: payload.followUpOf ? '' : (payload.concessionReason || ''),
+    recordedAfterService: Boolean(payload.recordedAfterService),
+    historicalEntryReason: payload.historicalEntryReason || '',
     patientName: 'Counter booking',
     doctorName: 'Doctor',
     department: '',
@@ -177,6 +179,13 @@ export const updateAppointmentStatus = async (appointmentId: string, status: App
     method: 'PATCH',
     authToken: token,
     body: JSON.stringify({ status })
+  });
+};
+
+export const markAppointmentConsulted = async (appointmentId: string, reason = ''): Promise<Appointment> => {
+  const token = authTokenOrThrow();
+  return apiFetch<Appointment>(`/api/appointments/${encodeURIComponent(appointmentId)}/`, {
+    method: 'PATCH', authToken: token, body: JSON.stringify({ action: 'mark_consulted', reason })
   });
 };
 
