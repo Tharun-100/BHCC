@@ -17,8 +17,8 @@ def _paytm_checksum_class():
         from paytmchecksum import PaytmChecksum
     except ImportError as exc:
         raise PaytmPosError(
-            "Automatic Paytm POS support is unavailable on the backend. "
-            "Redeploy the backend with the paytmchecksum dependency installed."
+            "Automatic Paytm POS cryptography support is unavailable on the backend. "
+            "Redeploy the backend with the Paytm checksum dependencies installed."
         ) from exc
     return PaytmChecksum
 
