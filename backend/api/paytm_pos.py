@@ -7,11 +7,20 @@ import urllib.request
 from datetime import datetime
 from typing import Any
 
-from PaytmChecksum import PaytmChecksum
-
-
 class PaytmPosError(RuntimeError):
     pass
+
+
+def _paytm_checksum_class():
+    """Load Paytm's checksum helper without breaking the whole API at import time."""
+    try:
+        from paytmchecksum import PaytmChecksum
+    except ImportError as exc:
+        raise PaytmPosError(
+            "Automatic Paytm POS support is unavailable on the backend. "
+            "Redeploy the backend with the paytmchecksum dependency installed."
+        ) from exc
+    return PaytmChecksum
 
 
 def _settings() -> dict[str, str]:
@@ -32,6 +41,7 @@ def _settings() -> dict[str, str]:
 
 def _post(path: str, body: dict[str, Any], timestamp: str) -> dict[str, Any]:
     config = _settings()
+    PaytmChecksum = _paytm_checksum_class()
     checksum = PaytmChecksum.generateSignature(json.dumps(body, separators=(",", ":")), config["key"])
     payload = {"head": {"requestTimeStamp": timestamp, "channelId": config["channel"], "checksum": checksum, "version": "3.1"}, "body": body}
     host = "https://securegw-stage.paytm.in" if config["environment"] == "staging" else "https://securegw.paytm.in"
