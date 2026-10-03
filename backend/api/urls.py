@@ -44,6 +44,7 @@ urlpatterns = [
     path("appointments/", views.appointments),
     path("appointments/<int:pk>", views.appointment_detail),
     path("appointments/<int:pk>/", views.appointment_detail),
+    path("appointments/<int:pk>/refund/", views.appointment_refund),
     path("appointments/<int:pk>/manual-pos-payment/", views.manual_pos_payment),
     path("appointments/<int:pk>/paytm-pos/initiate/", views.paytm_pos_initiate),
     path("appointments/<int:pk>/paytm-pos/status/", views.paytm_pos_status),

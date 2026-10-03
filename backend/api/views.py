@@ -33,7 +33,7 @@ from .email_service import (
     send_staff_login_otp,
     send_verification_email,
 )
-from .models import AdminAuditLog, Appointment, CampRegistration, ConsentRecord, Department, DoctorAvailability, EmailOTP, Feedback, FreeCamp, LabRegistration, PayrollRecord, UserProfile, UserRole, allocate_patient_id
+from .models import AdminAuditLog, Appointment, AppointmentProcedure, CampRegistration, ConsentRecord, Department, DoctorAvailability, EmailOTP, Feedback, FreeCamp, LabRegistration, PayrollRecord, UserProfile, UserRole, allocate_patient_id
 from .operational_views import client_ip, record_admin_action
 from .permissions import IsAdmin, IsCounter
 from .serializers import (
@@ -81,6 +81,24 @@ def _follow_up_error(original: Appointment, patient: User, doctor: User, appoint
     ).exists():
         return "The free follow-up for this consultation has already been used."
     return None
+
+
+def _consultation_financials(request, role: str | None, base_fee: int, is_free: bool = False):
+    if is_free:
+        return {"base_fee": 0, "percent": 0, "amount": 0, "final_fee": 0, "reason": "", "share": 0}, None
+    try:
+        percent = int(request.data.get("concessionPercent") or 0)
+    except (TypeError, ValueError):
+        return None, Response({"detail": "Concession percentage must be a whole number."}, status=status.HTTP_400_BAD_REQUEST)
+    reason = str(request.data.get("concessionReason") or "").strip()
+    maximum = 20 if role == UserRole.COUNTER else 100 if role == UserRole.ADMIN else 0
+    if not 0 <= percent <= maximum:
+        return None, Response({"detail": f"This account may grant a concession between 0% and {maximum}%."}, status=status.HTTP_403_FORBIDDEN)
+    if percent and len(reason) < 3:
+        return None, Response({"detail": "A concession reason is required."}, status=status.HTTP_400_BAD_REQUEST)
+    amount = (base_fee * percent) // 100
+    final_fee = base_fee - amount
+    return {"base_fee": base_fee, "percent": percent, "amount": amount, "final_fee": final_fee, "reason": reason, "share": final_fee // 2}, None
 
 
 def _record_policy_consents(request, user: User) -> None:
@@ -714,16 +732,17 @@ def doctors(request):
 @permission_classes([IsAuthenticated, IsAdmin])
 def admin_dashboard(request):
     today = timezone.localdate()
+    inactive_statuses = [Appointment.Status.CANCELLED, Appointment.Status.NO_SHOW, Appointment.Status.RESCHEDULED]
     current_week_start = today - timedelta(days=6)
     previous_week_start = today - timedelta(days=13)
     previous_week_end = current_week_start - timedelta(days=1)
 
     current_week_appointments = Appointment.objects.filter(
         date__range=(current_week_start, today)
-    ).count()
+    ).exclude(status__in=inactive_statuses).count()
     previous_week_appointments = Appointment.objects.filter(
         date__range=(previous_week_start, previous_week_end)
-    ).count()
+    ).exclude(status__in=inactive_statuses).count()
     if previous_week_appointments:
         weekly_growth = round(
             ((current_week_appointments - previous_week_appointments) / previous_week_appointments) * 100,
@@ -744,7 +763,9 @@ def admin_dashboard(request):
     return Response(
         {
             "totalPatients": UserProfile.objects.filter(role=UserRole.PATIENT).count(),
-            "appointmentsToday": Appointment.objects.filter(date=today).count(),
+            "appointmentsToday": Appointment.objects.filter(date=today).exclude(status__in=inactive_statuses).count(),
+            "cancelledToday": Appointment.objects.filter(date=today, status=Appointment.Status.CANCELLED).count(),
+            "refundsPending": Appointment.objects.filter(refund_status__in=["Pending", "Initiated"]).count(),
             "activeDoctors": UserProfile.objects.filter(
                 role=UserRole.DOCTOR, user__is_active=True
             ).count(),
@@ -779,7 +800,7 @@ def appointments(request):
         if role in {UserRole.COUNTER, UserRole.ADMIN}:
             patient = get_object_or_404(User.objects.select_related("profile"), pk=request.data.get("patientId"), profile__role=UserRole.PATIENT)
         doctor_out = user_to_out(doctor)
-        fee = int(doctor.profile.fee or 0)
+        base_fee = int(doctor.profile.fee or 0)
         try:
             with transaction.atomic():
                 follow_up = None
@@ -789,7 +810,9 @@ def appointments(request):
                     follow_up_error = _follow_up_error(follow_up, patient, doctor, ser.validated_data["date"])
                     if follow_up_error:
                         return Response({"detail": follow_up_error}, status=status.HTTP_409_CONFLICT)
-                    fee = 0
+                financials, financial_error = _consultation_financials(request, role, base_fee, bool(follow_up))
+                if financial_error:
+                    return financial_error
                 sequence, token_number = _next_appointment_token(doctor.profile.department, ser.validated_data["date"])
                 obj = Appointment.objects.create(
                     patient=patient,
@@ -799,7 +822,15 @@ def appointments(request):
                     department=doctor.profile.department,
                     date=ser.validated_data["date"],
                     time=ser.validated_data["time"],
-                    fee=fee,
+                    fee=financials["final_fee"],
+                    base_consultation_fee=financials["base_fee"],
+                    concession_percent=financials["percent"],
+                    concession_amount=financials["amount"],
+                    concession_reason=financials["reason"],
+                    concession_granted_by=request.user if financials["percent"] else None,
+                    concession_granted_at=timezone.now() if financials["percent"] else None,
+                    doctor_share_percent=50,
+                    doctor_share_amount=financials["share"],
                     department_sequence=sequence,
                     token_number=token_number,
                     follow_up_of=follow_up,
@@ -842,9 +873,97 @@ def appointments(request):
 @api_view(["PATCH"])
 @permission_classes([IsAuthenticated])
 def appointment_detail(request, pk: int):
-    appointment = get_object_or_404(Appointment, pk=pk)
     role = getattr(getattr(request.user, "profile", None), "role", None)
+    appointment = get_object_or_404(Appointment.objects.select_related("doctor__profile", "patient__profile"), pk=pk)
+    action = str(request.data.get("action") or "").strip().lower()
     next_status = str(request.data.get("status") or "").strip()
+
+    if action == "reschedule":
+        if role not in {UserRole.ADMIN, UserRole.COUNTER}:
+            return Response({"detail": "Only administrators and counter staff can reschedule appointments."}, status=status.HTTP_403_FORBIDDEN)
+        if appointment.status in {Appointment.Status.COMPLETED, Appointment.Status.CANCELLED, Appointment.Status.RESCHEDULED}:
+            return Response({"detail": "Completed, cancelled or already-rescheduled appointments cannot be rescheduled."}, status=status.HTTP_409_CONFLICT)
+        date_text = str(request.data.get("date") or "").strip()
+        time_text = str(request.data.get("time") or "").strip()
+        reason = str(request.data.get("reason") or "").strip()
+        if len(reason) < 3:
+            return Response({"detail": "Enter a short reason for rescheduling."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            new_date = date_type.fromisoformat(date_text)
+        except ValueError:
+            return Response({"detail": "Enter a valid reschedule date in YYYY-MM-DD format."}, status=status.HTTP_400_BAD_REQUEST)
+        if new_date < timezone.localdate():
+            return Response({"detail": "An appointment cannot be rescheduled to a past date."}, status=status.HTTP_400_BAD_REQUEST)
+        if len(time_text) != 5 or time_text[2] != ":":
+            return Response({"detail": "Enter a valid reschedule time in HH:MM format."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            reschedule_hour, reschedule_minute = map(int, time_text.split(":"))
+        except ValueError:
+            return Response({"detail": "Enter a valid reschedule time in HH:MM format."}, status=status.HTTP_400_BAD_REQUEST)
+        if not (0 <= reschedule_hour <= 23 and 0 <= reschedule_minute <= 59):
+            return Response({"detail": "Enter a valid reschedule time in HH:MM format."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            with transaction.atomic():
+                locked = Appointment.objects.select_for_update().select_related("doctor__profile").get(pk=appointment.pk)
+                original_payment_method = locked.payment_method
+                original_payment_status = locked.payment_status
+                locked.status = Appointment.Status.RESCHEDULED
+                locked.payment_status = "Transferred"
+                locked.payment_method = "TRANSFERRED"
+                locked.reschedule_reason = reason
+                locked.rescheduled_by = request.user
+                locked.rescheduled_at = timezone.now()
+                locked.save(update_fields=["status", "payment_status", "payment_method", "reschedule_reason", "rescheduled_by", "rescheduled_at", "updated_at"])
+                sequence, token_number = _next_appointment_token(locked.department, new_date)
+                replacement = Appointment.objects.create(
+                    patient=locked.patient,
+                    doctor=locked.doctor,
+                    patient_name=locked.patient_name,
+                    doctor_name=locked.doctor_name,
+                    department=locked.department,
+                    date=new_date,
+                    time=time_text,
+                    fee=locked.fee,
+                    base_consultation_fee=locked.base_consultation_fee,
+                    concession_percent=locked.concession_percent,
+                    concession_amount=locked.concession_amount,
+                    concession_reason=locked.concession_reason,
+                    concession_granted_by=locked.concession_granted_by,
+                    concession_granted_at=locked.concession_granted_at,
+                    doctor_share_percent=locked.doctor_share_percent,
+                    doctor_share_amount=locked.doctor_share_amount,
+                    department_sequence=sequence,
+                    token_number=token_number,
+                    follow_up_of=locked.follow_up_of,
+                    rescheduled_from=locked,
+                    status=Appointment.Status.UPCOMING,
+                    payment_id=locked.payment_id,
+                    payment_status=original_payment_status,
+                    payment_method=original_payment_method,
+                    payment_reference=locked.payment_reference,
+                    payment_recorded_by=locked.payment_recorded_by,
+                    payment_recorded_at=locked.payment_recorded_at,
+                    order_id=locked.order_id,
+                    gateway_order_id=locked.gateway_order_id,
+                    gateway_fee=locked.gateway_fee,
+                    total_amount=locked.total_amount,
+                    total_amount_paise=locked.total_amount_paise,
+                    gateway_details=locked.gateway_details,
+                )
+                AppointmentProcedure.objects.bulk_create([
+                    AppointmentProcedure(
+                        appointment=replacement,
+                        procedure=item.procedure,
+                        name=item.name,
+                        charge=item.charge,
+                        added_by=item.added_by,
+                    )
+                    for item in locked.procedure_charges.select_related("procedure", "added_by").all()
+                ])
+        except IntegrityError:
+            return Response({"detail": "The selected doctor slot has already been booked. Choose another available slot."}, status=status.HTTP_409_CONFLICT)
+        schedule_appointment_confirmation(replacement.id)
+        return Response(AppointmentSerializer(replacement).data)
 
     can_update = (
         role in {UserRole.ADMIN, UserRole.COUNTER}
@@ -866,15 +985,27 @@ def appointment_detail(request, pk: int):
         return Response({"detail": "Patients can only cancel their own upcoming appointments."}, status=status.HTTP_403_FORBIDDEN)
     if next_status == Appointment.Status.CANCELLED and appointment.status == Appointment.Status.COMPLETED:
         return Response({"detail": "Completed appointments cannot be cancelled."}, status=status.HTTP_400_BAD_REQUEST)
+    if next_status == Appointment.Status.CANCELLED and appointment.status in {Appointment.Status.CANCELLED, Appointment.Status.RESCHEDULED}:
+        return Response({"detail": "This appointment is already cancelled or rescheduled."}, status=status.HTTP_409_CONFLICT)
 
     appointment.status = next_status
     update_fields = ["status", "updated_at"]
 
     if next_status == Appointment.Status.CANCELLED:
+        reason = str(request.data.get("reason") or "").strip()
+        if role in {UserRole.ADMIN, UserRole.COUNTER} and len(reason) < 3:
+            return Response({"detail": "Enter a short cancellation reason."}, status=status.HTTP_400_BAD_REQUEST)
+        appointment.cancellation_reason = reason or "Cancelled by patient"
+        appointment.cancelled_by = request.user
+        appointment.cancelled_at = timezone.now()
+        update_fields.extend(["cancellation_reason", "cancelled_by", "cancelled_at"])
         gateway_details = appointment.gateway_details if isinstance(appointment.gateway_details, dict) else {}
         if appointment.payment_status == "Confirmed" and appointment.payment_method in {"CASH", "PAYTM_POS_MANUAL", "PAYTM_POS_AUTOMATIC"}:
-            appointment.payment_status = "Refund at Counter"
-            update_fields.append("payment_status")
+            appointment.payment_status = "Refund Pending"
+            appointment.refund_status = "Pending"
+            appointment.refund_method = "CASH" if appointment.payment_method == "CASH" else "PAYTM_POS"
+            appointment.refund_amount = appointment.fee
+            update_fields.extend(["payment_status", "refund_status", "refund_method", "refund_amount"])
         elif appointment.payment_status == "Confirmed" and appointment.payment_id:
             key_id = os.getenv("RAZORPAY_KEY_ID")
             key_secret = os.getenv("RAZORPAY_KEY_SECRET")
@@ -893,19 +1024,64 @@ def appointment_detail(request, pk: int):
                         },
                     )
                     appointment.payment_status = "Refund Initiated"
+                    appointment.refund_status = "Initiated"
+                    appointment.refund_method = "ONLINE"
+                    appointment.refund_amount = refund_amount // 100
+                    appointment.refund_reference = str(refund.get("id") or "") if isinstance(refund, dict) else ""
                     gateway_details["refund"] = refund
                 except Exception as exc:
                     appointment.payment_status = "Refund Pending"
+                    appointment.refund_status = "Pending"
+                    appointment.refund_method = "ONLINE"
+                    appointment.refund_amount = refund_amount // 100
                     gateway_details["refundError"] = str(exc)
             else:
                 appointment.payment_status = "Refund Pending"
+                appointment.refund_status = "Pending"
+                appointment.refund_method = "ONLINE"
+                appointment.refund_amount = refund_amount // 100
             appointment.gateway_details = gateway_details
-            update_fields.extend(["payment_status", "gateway_details"])
+            update_fields.extend(["payment_status", "gateway_details", "refund_status", "refund_method", "refund_amount", "refund_reference"])
         elif appointment.payment_status in {"Pending", "Pay at Counter", "Failed", ""}:
             appointment.payment_status = "No Refund Needed"
-            update_fields.append("payment_status")
+            appointment.refund_status = "Not Required"
+            update_fields.extend(["payment_status", "refund_status"])
+        elif appointment.payment_method == "FREE_FOLLOW_UP":
+            appointment.payment_status = "No Refund Needed"
+            appointment.refund_status = "Not Required"
+            update_fields.extend(["payment_status", "refund_status"])
 
     appointment.save(update_fields=update_fields)
+    return Response(AppointmentSerializer(appointment).data)
+
+
+@api_view(["PATCH"])
+@permission_classes([IsAuthenticated])
+def appointment_refund(request, pk: int):
+    role = getattr(getattr(request.user, "profile", None), "role", None)
+    if role not in {UserRole.ADMIN, UserRole.COUNTER}:
+        return Response({"detail": "Only administrators and counter staff can record refunds."}, status=status.HTTP_403_FORBIDDEN)
+    method = str(request.data.get("method") or "").strip().upper()
+    reference = str(request.data.get("reference") or "").strip()
+    notes = str(request.data.get("notes") or "").strip()
+    if method not in {"CASH", "PAYTM_POS"}:
+        return Response({"detail": "Refund method must be CASH or PAYTM_POS."}, status=status.HTTP_400_BAD_REQUEST)
+    if method == "PAYTM_POS" and len(reference) < 4:
+        return Response({"detail": "Enter the Paytm POS refund reference."}, status=status.HTTP_400_BAD_REQUEST)
+    with transaction.atomic():
+        appointment = get_object_or_404(Appointment.objects.select_for_update(), pk=pk)
+        if appointment.status != Appointment.Status.CANCELLED:
+            return Response({"detail": "Only a cancelled appointment can be refunded."}, status=status.HTTP_409_CONFLICT)
+        if appointment.refund_status != "Pending" or appointment.refund_method not in {"CASH", "PAYTM_POS"}:
+            return Response({"detail": "This appointment does not have a pending counter refund."}, status=status.HTTP_409_CONFLICT)
+        appointment.refund_status = "Refunded"
+        appointment.refund_method = method
+        appointment.refund_reference = reference
+        appointment.refund_notes = notes
+        appointment.refund_recorded_by = request.user
+        appointment.refund_recorded_at = timezone.now()
+        appointment.payment_status = "Refunded"
+        appointment.save(update_fields=["refund_status", "refund_method", "refund_reference", "refund_notes", "refund_recorded_by", "refund_recorded_at", "payment_status", "updated_at"])
     return Response(AppointmentSerializer(appointment).data)
 
 
@@ -1079,7 +1255,8 @@ def appointment_procedures(request, pk: int):
         with transaction.atomic():
             appointment.procedure_charges.all().delete()
             AppointmentProcedure.objects.bulk_create([AppointmentProcedure(appointment=appointment, procedure=row, name=row.name, charge=row.charge, added_by=request.user) for row in procedures])
-            appointment.fee = int(appointment.doctor.profile.fee or 0) + sum(row.charge for row in procedures)
+            consultation_fee = max(0, int(appointment.base_consultation_fee or appointment.doctor.profile.fee or 0) - int(appointment.concession_amount or 0))
+            appointment.fee = consultation_fee + sum(row.charge for row in procedures)
             appointment.payment_status = "Pay at Counter"
             appointment.save(update_fields=["fee", "payment_status", "updated_at"])
     rows = appointment.procedure_charges.all().order_by("id")
@@ -1197,6 +1374,7 @@ def registrations(request):
     native_place = (request.data.get("nativePlace") or "").strip()
     age_value = request.data.get("age")
     gender = str(request.data.get("gender") or "").strip().upper()
+    portal_password = str(request.data.get("portalPassword") or "")
     try:
         age = int(age_value)
     except (TypeError, ValueError):
@@ -1205,6 +1383,11 @@ def registrations(request):
     is_free_camp = bool(request.data.get("isFreeCamp", False))
     if not name or len(phone_no) != 10 or not address or age is None or not 0 <= age <= 120 or gender not in {"MALE", "FEMALE", "OTHER"}:
         return Response({"detail": "Name, valid 10-digit mobile number, address, age (0-120), gender, and department are required."}, status=status.HTTP_400_BAD_REQUEST)
+    if portal_password:
+        try:
+            password_validation.validate_password(portal_password)
+        except ValidationError as exc:
+            return Response({"detail": " ".join(exc.messages)}, status=status.HTTP_400_BAD_REQUEST)
 
     with transaction.atomic():
         today = timezone.localdate()
@@ -1236,6 +1419,8 @@ def registrations(request):
             elif matching_profiles and not create_separate_patient:
                 return Response({"detail": "This mobile number already belongs to an existing patient. Confirm the correct patient before registering.", "matches": [{"userId": str(item.user_id), "patientId": item.patient_id, "name": item.name, "phoneNo": item.phone_no} for item in matching_profiles]}, status=status.HTTP_409_CONFLICT)
         if profile:
+            if portal_password:
+                return Response({"detail": "This patient already exists. Use the authorized account password-reset option instead of replacing the password during registration."}, status=status.HTTP_409_CONFLICT)
             patient = profile.user
             profile.name = name
             profile.phone_no = phone_no
@@ -1251,9 +1436,7 @@ def registrations(request):
             while User.objects.filter(username=username).exists():
                 suffix += 1
                 username = f"patient-{phone_no}-{suffix}"
-            patient = User.objects.create_user(username=username)
-            patient.set_unusable_password()
-            patient.save(update_fields=["password"])
+            patient = User.objects.create_user(username=username, password=portal_password or None)
             profile = UserProfile.objects.create(user=patient, role=UserRole.PATIENT, name=name, phone_no=phone_no, address=address, age=age, gender=gender, native_place=native_place)
             allocate_patient_id(profile)
 
@@ -1788,12 +1971,13 @@ def payments_create_order(request):
         return Response({"detail": "Only patients can create orders."}, status=status.HTTP_403_FORBIDDEN)
 
     appointment_data = request.data.get("appointmentData") or {}
-    fee = int(appointment_data.get("fee") or 0)
 
     doctor_id = int(appointment_data.get("doctorId") or 0)
     if doctor_id <= 0:
         return Response({"detail": "doctorId is required."}, status=status.HTTP_400_BAD_REQUEST)
     doctor = User.objects.get(pk=doctor_id)
+    base_fee = int(doctor.profile.fee or 0)
+    fee = base_fee
 
     try:
         appt_date = date_type.fromisoformat(str(appointment_data.get("date") or ""))
@@ -1814,7 +1998,7 @@ def payments_create_order(request):
                 if follow_up_error:
                     return Response({"detail": follow_up_error}, status=status.HTTP_409_CONFLICT)
                 fee = 0
-            elif fee <= 0:
+            elif base_fee <= 0:
                 return Response({"detail": "Valid fee is required."}, status=status.HTTP_400_BAD_REQUEST)
             gateway_fee = int((fee * 0.02) + 0.9999) if fee else 0
             final_amount = fee + gateway_fee
@@ -1829,6 +2013,9 @@ def payments_create_order(request):
                 date=appt_date,
                 time=appt_time,
                 fee=fee,
+                base_consultation_fee=0 if follow_up else base_fee,
+                doctor_share_percent=50,
+                doctor_share_amount=fee // 2,
                 department_sequence=sequence,
                 token_number=token_number,
                 follow_up_of=follow_up,

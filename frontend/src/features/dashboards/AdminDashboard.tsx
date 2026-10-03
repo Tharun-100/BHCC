@@ -3,7 +3,7 @@
 import React from 'react';
 import { Banknote, Calendar, CreditCard, Heart, Search, Users, Wallet } from 'lucide-react';
 
-import { getAdminDashboardSummary, type AdminDashboardSummary } from '../../services/clinicService';
+import { cancelAppointment, getAdminDashboardSummary, getDoctorAvailability, recordAppointmentRefund, rescheduleAppointment, type AdminDashboardSummary } from '../../services/clinicService';
 import { Appointment, User } from '../../types';
 
 const formatCurrency = (value: number) =>
@@ -28,6 +28,7 @@ const AdminDashboard: React.FC<{ user: User }> = ({ user }) => {
   const [summary, setSummary] = React.useState<AdminDashboardSummary | null>(null);
   const [search, setSearch] = React.useState('');
   const [error, setError] = React.useState<string | null>(null);
+  const [notice, setNotice] = React.useState<string | null>(null);
 
   const loadSummary = React.useCallback(async () => {
     try {
@@ -44,6 +45,46 @@ const AdminDashboard: React.FC<{ user: User }> = ({ user }) => {
     const refreshTimer = window.setInterval(() => void loadSummary(), 30_000);
     return () => window.clearInterval(refreshTimer);
   }, [loadSummary]);
+
+  const cancelFromOverview = async (appointment: Appointment) => {
+    const reason = window.prompt(`Why is ${appointment.patientName}'s appointment being cancelled?`, 'Clinic cancellation');
+    if (!reason || reason.trim().length < 3) return;
+    if (!window.confirm('Cancel this appointment and reopen the slot?')) return;
+    try {
+      const updated = await cancelAppointment(appointment.id, reason.trim());
+      setNotice(updated.refundStatus === 'Pending' ? `Appointment cancelled. A ${updated.refundMethod === 'CASH' ? 'cash' : 'Paytm POS'} refund is pending.` : updated.refundStatus === 'Initiated' ? 'Appointment cancelled and the online refund was initiated.' : 'Appointment cancelled; no refund is required.');
+      await loadSummary();
+    } catch (actionError) { setError(actionError instanceof Error ? actionError.message : 'Could not cancel the appointment.'); }
+  };
+
+  const rescheduleFromOverview = async (appointment: Appointment) => {
+    const nextDate = window.prompt('Enter the new date (YYYY-MM-DD):', appointment.date);
+    if (!nextDate) return;
+    try {
+      const available = await getDoctorAvailability(appointment.doctorId, nextDate.trim());
+      if (!available.length) { setError('No available slots exist for that doctor on the selected date.'); return; }
+      const nextTime = window.prompt(`Enter one available time:\n${available.join(', ')}`, available[0]);
+      if (!nextTime) return;
+      if (!available.includes(nextTime.trim())) { setError('Select one of the displayed available slots.'); return; }
+      const reason = window.prompt('Enter the reason for rescheduling:', 'Clinic rescheduling');
+      if (!reason || reason.trim().length < 3) return;
+      const updated = await rescheduleAppointment(appointment.id, nextDate.trim(), nextTime.trim(), reason.trim());
+      setNotice(`Appointment rescheduled to ${updated.date} at ${updated.time}.`);
+      await loadSummary();
+    } catch (actionError) { setError(actionError instanceof Error ? actionError.message : 'Could not reschedule the appointment.'); }
+  };
+
+  const refundFromOverview = async (appointment: Appointment) => {
+    const method = appointment.refundMethod === 'CASH' ? 'CASH' : 'PAYTM_POS';
+    if (!window.confirm(`Confirm the ₹${appointment.refundAmount || appointment.fee} ${method === 'CASH' ? 'cash' : 'Paytm POS'} refund?`)) return;
+    const reference = method === 'PAYTM_POS' ? window.prompt('Enter the Paytm POS refund reference:') : '';
+    if (reference === null) return;
+    try {
+      await recordAppointmentRefund(appointment.id, method, reference.trim());
+      setNotice('Refund recorded successfully.');
+      await loadSummary();
+    } catch (actionError) { setError(actionError instanceof Error ? actionError.message : 'Could not record the refund.'); }
+  };
 
   const recentAppointments = React.useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -92,6 +133,7 @@ const AdminDashboard: React.FC<{ user: User }> = ({ user }) => {
           </button>
         </div>
       )}
+      {notice && <div className="mb-6 rounded-2xl border border-green-100 bg-green-50 px-5 py-4 text-sm font-semibold text-green-800">{notice}</div>}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
         {stats.map((stat) => (
@@ -144,6 +186,7 @@ const AdminDashboard: React.FC<{ user: User }> = ({ user }) => {
                     <th className="px-8 py-4 text-xs font-bold text-gray-400 uppercase tracking-wider">Doctor</th>
                     <th className="px-8 py-4 text-xs font-bold text-gray-400 uppercase tracking-wider">Fee</th>
                     <th className="px-8 py-4 text-xs font-bold text-gray-400 uppercase tracking-wider">Status</th>
+                    <th className="px-8 py-4 text-xs font-bold text-gray-400 uppercase tracking-wider">Controls</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -159,12 +202,13 @@ const AdminDashboard: React.FC<{ user: User }> = ({ user }) => {
                             {presentation.label}
                           </span>
                         </td>
+                        <td className="px-8 py-5"><div className="flex flex-wrap gap-2">{['Upcoming','CheckedIn'].includes(appointment.status)&&<><button type="button" onClick={() => void rescheduleFromOverview(appointment)} className="rounded-lg border border-amber-500 px-2 py-1 text-xs font-bold text-amber-800">Reschedule</button><button type="button" onClick={() => void cancelFromOverview(appointment)} className="rounded-lg border border-red-500 px-2 py-1 text-xs font-bold text-red-700">Cancel</button></>}{appointment.status==='Cancelled'&&appointment.refundStatus==='Pending'&&['CASH','PAYTM_POS'].includes(appointment.refundMethod||'')&&<button type="button" onClick={() => void refundFromOverview(appointment)} className="rounded-lg bg-red-600 px-2 py-1 text-xs font-bold text-white">Record refund</button>}</div></td>
                       </tr>
                     );
                   })}
                   {summary && recentAppointments.length === 0 && (
                     <tr>
-                      <td colSpan={4} className="px-8 py-10 text-center text-sm text-gray-400">
+                      <td colSpan={5} className="px-8 py-10 text-center text-sm text-gray-400">
                         {search ? 'No recent appointments match your search.' : 'No appointments have been recorded yet.'}
                       </td>
                     </tr>
@@ -186,6 +230,14 @@ const AdminDashboard: React.FC<{ user: User }> = ({ user }) => {
               <div className="p-4 bg-gray-800 rounded-2xl">
                 <p className="text-xs text-gray-400 uppercase font-bold mb-1">Completed Today</p>
                 <p className="text-xl font-black">{summary?.completedToday ?? '—'}</p>
+              </div>
+              <div className="p-4 bg-gray-800 rounded-2xl">
+                <p className="text-xs text-gray-400 uppercase font-bold mb-1">Cancelled Today</p>
+                <p className="text-xl font-black">{summary?.cancelledToday ?? '—'}</p>
+              </div>
+              <div className="p-4 bg-gray-800 rounded-2xl">
+                <p className="text-xs text-gray-400 uppercase font-bold mb-1">Refunds Pending</p>
+                <p className="text-xl font-black">{summary?.refundsPending ?? '—'}</p>
               </div>
               <div className="p-4 bg-sky-600 rounded-2xl">
                 <p className="text-xs text-white/70 uppercase font-bold mb-1">Weekly Appointment Growth</p>

@@ -149,25 +149,57 @@ class AppointmentSerializer(serializers.ModelSerializer):
             "date",
             "time",
             "fee",
+            "baseConsultationFee",
+            "concessionPercent",
+            "concessionAmount",
+            "concessionReason",
+            "doctorSharePercent",
+            "doctorShareAmount",
             "tokenNumber",
             "followUpOf",
             "isFreeFollowUp",
+            "rescheduledFrom",
+            "rescheduleReason",
+            "rescheduledAt",
             "status",
             "paymentId",
             "paymentStatus",
             "paymentMethod",
             "paymentReference",
             "paymentRecordedAt",
+            "cancellationReason",
+            "cancelledAt",
+            "refundStatus",
+            "refundMethod",
+            "refundAmount",
+            "refundReference",
+            "refundNotes",
         ]
 
     paymentId = serializers.CharField(source="payment_id", allow_blank=True, required=False)
+    baseConsultationFee = serializers.IntegerField(source="base_consultation_fee", read_only=True)
+    concessionPercent = serializers.IntegerField(source="concession_percent", required=False, min_value=0, max_value=100)
+    concessionAmount = serializers.IntegerField(source="concession_amount", read_only=True)
+    concessionReason = serializers.CharField(source="concession_reason", required=False, allow_blank=True)
+    doctorSharePercent = serializers.IntegerField(source="doctor_share_percent", read_only=True)
+    doctorShareAmount = serializers.IntegerField(source="doctor_share_amount", read_only=True)
     tokenNumber = serializers.CharField(source="token_number", read_only=True)
     followUpOf = serializers.CharField(source="follow_up_of_id", required=False, allow_null=True)
     isFreeFollowUp = serializers.SerializerMethodField()
+    rescheduledFrom = serializers.CharField(source="rescheduled_from_id", read_only=True, allow_null=True)
+    rescheduleReason = serializers.CharField(source="reschedule_reason", read_only=True)
+    rescheduledAt = serializers.DateTimeField(source="rescheduled_at", read_only=True, allow_null=True)
     paymentStatus = serializers.CharField(source="payment_status", allow_blank=True, required=False)
     paymentMethod = serializers.CharField(source="payment_method", read_only=True)
     paymentReference = serializers.CharField(source="payment_reference", read_only=True)
     paymentRecordedAt = serializers.DateTimeField(source="payment_recorded_at", read_only=True, allow_null=True)
+    cancellationReason = serializers.CharField(source="cancellation_reason", read_only=True)
+    cancelledAt = serializers.DateTimeField(source="cancelled_at", read_only=True, allow_null=True)
+    refundStatus = serializers.CharField(source="refund_status", read_only=True)
+    refundMethod = serializers.CharField(source="refund_method", read_only=True)
+    refundAmount = serializers.IntegerField(source="refund_amount", read_only=True)
+    refundReference = serializers.CharField(source="refund_reference", read_only=True)
+    refundNotes = serializers.CharField(source="refund_notes", read_only=True)
 
     def get_isFreeFollowUp(self, obj: Appointment) -> bool:
         return bool(obj.follow_up_of_id and obj.payment_method == "FREE_FOLLOW_UP")

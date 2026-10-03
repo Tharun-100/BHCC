@@ -68,7 +68,7 @@ export const createAppointment = async (payload: NewAppointmentInput): Promise<s
   return created.id;
 };
 
-export const createCounterAppointment = async (payload: {patientId:string; doctorId:string; date:string; time:string; followUpOf?:string}): Promise<{id:string;isFreeFollowUp:boolean}> => {
+export const createCounterAppointment = async (payload: {patientId:string; doctorId:string; date:string; time:string; followUpOf?:string; concessionPercent?:number; concessionReason?:string}): Promise<{id:string;isFreeFollowUp:boolean}> => {
   const token = authTokenOrThrow();
   const appointment = {
     patientId: payload.patientId,
@@ -76,6 +76,8 @@ export const createCounterAppointment = async (payload: {patientId:string; docto
     date: payload.date,
     time: payload.time,
     ...(payload.followUpOf ? { followUpOf: payload.followUpOf } : {}),
+    concessionPercent: payload.followUpOf ? 0 : (payload.concessionPercent || 0),
+    concessionReason: payload.followUpOf ? '' : (payload.concessionReason || ''),
     patientName: 'Counter booking',
     doctorName: 'Doctor',
     department: '',
@@ -108,6 +110,8 @@ export const listAllAppointments = async (): Promise<Appointment[]> => {
 export interface AdminDashboardSummary {
   totalPatients: number;
   appointmentsToday: number;
+  cancelledToday: number;
+  refundsPending: number;
   activeDoctors: number;
   grossRevenue: number;
   cashRevenue: number;
@@ -173,6 +177,27 @@ export const updateAppointmentStatus = async (appointmentId: string, status: App
     method: 'PATCH',
     authToken: token,
     body: JSON.stringify({ status })
+  });
+};
+
+export const cancelAppointment = async (appointmentId: string, reason: string): Promise<Appointment> => {
+  const token = authTokenOrThrow();
+  return apiFetch<Appointment>(`/api/appointments/${encodeURIComponent(appointmentId)}/`, {
+    method: 'PATCH', authToken: token, body: JSON.stringify({ status: 'Cancelled', reason })
+  });
+};
+
+export const rescheduleAppointment = async (appointmentId: string, date: string, time: string, reason: string): Promise<Appointment> => {
+  const token = authTokenOrThrow();
+  return apiFetch<Appointment>(`/api/appointments/${encodeURIComponent(appointmentId)}/`, {
+    method: 'PATCH', authToken: token, body: JSON.stringify({ action: 'reschedule', date, time, reason })
+  });
+};
+
+export const recordAppointmentRefund = async (appointmentId: string, method: 'CASH' | 'PAYTM_POS', reference = '', notes = ''): Promise<Appointment> => {
+  const token = authTokenOrThrow();
+  return apiFetch<Appointment>(`/api/appointments/${encodeURIComponent(appointmentId)}/refund/`, {
+    method: 'PATCH', authToken: token, body: JSON.stringify({ method, reference, notes })
   });
 };
 
@@ -257,6 +282,7 @@ export interface RegistrationInput {
   campId?: string;
   existingPatientId?: string;
   createSeparatePatient?: boolean;
+  portalPassword?: string;
 }
 
 export const createRegistration = async (payload: RegistrationInput): Promise<LabRegistration> => {

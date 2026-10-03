@@ -159,15 +159,31 @@ export interface Appointment {
   date: string; // Format: YYYY-MM-DD
   time: string; // Format: HH:MM
   fee: number;
+  baseConsultationFee?: number;
+  concessionPercent?: number;
+  concessionAmount?: number;
+  concessionReason?: string;
+  doctorSharePercent?: number;
+  doctorShareAmount?: number;
   tokenNumber?: string;
   followUpOf?: string | null;
   isFreeFollowUp?: boolean;
+  rescheduledFrom?: string | null;
+  rescheduleReason?: string;
+  rescheduledAt?: string | null;
   status: 'Upcoming' | 'CheckedIn' | 'InConsultation' | 'Completed' | 'Cancelled' | 'NoShow' | 'Rescheduled';
   paymentId: string;
   paymentStatus?: string;
   paymentMethod?: string;
   paymentReference?: string;
   paymentRecordedAt?: string | null;
+  cancellationReason?: string;
+  cancelledAt?: string | null;
+  refundStatus?: string;
+  refundMethod?: string;
+  refundAmount?: number;
+  refundReference?: string;
+  refundNotes?: string;
 }
 
 export interface Feedback {

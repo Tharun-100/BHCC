@@ -103,11 +103,29 @@ class Appointment(models.Model):
     date = models.DateField()
     time = models.CharField(max_length=5)
     fee = models.PositiveIntegerField(default=0)
+    base_consultation_fee = models.PositiveIntegerField(default=0)
+    concession_percent = models.PositiveSmallIntegerField(default=0)
+    concession_amount = models.PositiveIntegerField(default=0)
+    concession_reason = models.TextField(blank=True, default="")
+    concession_granted_by = models.ForeignKey(
+        User, on_delete=models.PROTECT, null=True, blank=True, related_name="granted_appointment_concessions"
+    )
+    concession_granted_at = models.DateTimeField(null=True, blank=True)
+    doctor_share_percent = models.PositiveSmallIntegerField(default=50)
+    doctor_share_amount = models.PositiveIntegerField(default=0)
     department_sequence = models.PositiveIntegerField(null=True, blank=True)
     token_number = models.CharField(max_length=30, blank=True, default="")
     follow_up_of = models.ForeignKey(
         "self", on_delete=models.PROTECT, null=True, blank=True, related_name="follow_ups"
     )
+    rescheduled_from = models.OneToOneField(
+        "self", on_delete=models.PROTECT, null=True, blank=True, related_name="rescheduled_to"
+    )
+    reschedule_reason = models.TextField(blank=True, default="")
+    rescheduled_by = models.ForeignKey(
+        User, on_delete=models.PROTECT, null=True, blank=True, related_name="rescheduled_appointments"
+    )
+    rescheduled_at = models.DateTimeField(null=True, blank=True)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.UPCOMING)
     payment_id = models.CharField(max_length=120, blank=True, default="")
 
@@ -125,6 +143,20 @@ class Appointment(models.Model):
     total_amount_paise = models.PositiveIntegerField(default=0)
     gateway_details = models.JSONField(null=True, blank=True)
     confirmation_email_sent_at = models.DateTimeField(null=True, blank=True)
+    cancellation_reason = models.TextField(blank=True, default="")
+    cancelled_by = models.ForeignKey(
+        User, on_delete=models.PROTECT, null=True, blank=True, related_name="cancelled_appointments"
+    )
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+    refund_status = models.CharField(max_length=30, blank=True, default="")
+    refund_method = models.CharField(max_length=30, blank=True, default="")
+    refund_amount = models.PositiveIntegerField(default=0)
+    refund_reference = models.CharField(max_length=120, blank=True, default="")
+    refund_notes = models.TextField(blank=True, default="")
+    refund_recorded_by = models.ForeignKey(
+        User, on_delete=models.PROTECT, null=True, blank=True, related_name="recorded_appointment_refunds"
+    )
+    refund_recorded_at = models.DateTimeField(null=True, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

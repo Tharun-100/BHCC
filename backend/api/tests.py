@@ -140,6 +140,64 @@ class ClinicOperationsTests(TestCase):
         self.assertEqual(response.data["paymentStatus"], "Confirmed")
         self.assertTrue(response.data["paymentReference"].startswith("CASH-BHCC-"))
 
+    def test_counter_cancellation_reopens_slot_and_records_cash_refund(self):
+        appointment_date = date.today() + timedelta(days=1)
+        DoctorAvailability.objects.create(doctor=self.doctor, date=appointment_date, slots=["15:00"])
+        appointment = Appointment.objects.create(
+            patient=self.patient, doctor=self.doctor, patient_name="Patient", doctor_name="Doctor",
+            department="Dental", date=appointment_date, time="15:00", fee=500,
+            payment_status="Confirmed", payment_method="CASH",
+        )
+        client = APIClient(); client.force_authenticate(self.counter)
+        response = client.patch(
+            f"/api/appointments/{appointment.id}/",
+            {"status": "Cancelled", "reason": "Patient unable to attend"}, format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["refundStatus"], "Pending")
+        self.assertEqual(response.data["refundMethod"], "CASH")
+        availability_response = client.get(f"/api/availability/?doctor_id={self.doctor.id}&date={appointment_date.isoformat()}")
+        self.assertEqual(availability_response.data["slots"], ["15:00"])
+
+        refunded = client.patch(
+            f"/api/appointments/{appointment.id}/refund/",
+            {"method": "CASH", "notes": "Returned at reception"}, format="json",
+        )
+        self.assertEqual(refunded.status_code, 200)
+        self.assertEqual(refunded.data["paymentStatus"], "Refunded")
+        self.assertEqual(refunded.data["refundStatus"], "Refunded")
+
+    def test_counter_reschedules_and_transfers_payment_to_replacement(self):
+        original_date = date.today() + timedelta(days=1)
+        new_date = date.today() + timedelta(days=2)
+        appointment = Appointment.objects.create(
+            patient=self.patient, doctor=self.doctor, patient_name="Patient", doctor_name="Doctor",
+            department="Dental", date=original_date, time="09:00", fee=450,
+            base_consultation_fee=500, concession_percent=10, concession_amount=50,
+            concession_reason="Approved concession", concession_granted_by=self.counter,
+            concession_granted_at=timezone.now(), doctor_share_percent=50, doctor_share_amount=225,
+            payment_status="Confirmed", payment_method="PAYTM_POS_MANUAL", payment_reference="PAYTM-RESCHEDULE-TEST",
+        )
+        client = APIClient(); client.force_authenticate(self.counter)
+        response = client.patch(
+            f"/api/appointments/{appointment.id}/",
+            {"action": "reschedule", "date": new_date.isoformat(), "time": "09:15", "reason": "Doctor unavailable"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        replacement = Appointment.objects.get(pk=response.data["id"])
+        appointment.refresh_from_db()
+        self.assertEqual(appointment.status, Appointment.Status.RESCHEDULED)
+        self.assertEqual(appointment.payment_status, "Transferred")
+        self.assertEqual(appointment.payment_method, "TRANSFERRED")
+        self.assertEqual(replacement.rescheduled_from, appointment)
+        self.assertEqual(replacement.payment_status, "Confirmed")
+        self.assertEqual(replacement.payment_method, "PAYTM_POS_MANUAL")
+        self.assertEqual(replacement.payment_reference, "PAYTM-RESCHEDULE-TEST")
+        self.assertEqual(replacement.base_consultation_fee, 500)
+        self.assertEqual(replacement.concession_amount, 50)
+        self.assertEqual(replacement.doctor_share_amount, 225)
+
     def test_counter_registration_creates_patient_id_and_daily_token(self):
         client = APIClient(); client.force_authenticate(self.counter)
         response = client.post("/api/registrations/", {"name":"Camp Patient", "phoneNo":"9903554604", "address":"Kolkata", "age":35, "gender":"MALE", "departmentId":str(self.department.id)}, format="json")
@@ -147,6 +205,45 @@ class ClinicOperationsTests(TestCase):
         self.assertTrue(response.data["patientId"].startswith("BHCC"))
         self.assertEqual(response.data["tokenNumber"], "DEN-001")
         self.assertEqual(LabRegistration.objects.get().fee, 0)
+
+    def test_counter_can_set_password_only_for_a_new_patient(self):
+        client = APIClient(); client.force_authenticate(self.counter)
+        payload = {"name":"Portal Patient", "phoneNo":"9903554690", "address":"Kolkata", "age":35, "gender":"MALE", "departmentId":str(self.department.id), "portalPassword":"Secure-patient-password-95"}
+        created = client.post("/api/registrations/", payload, format="json")
+        self.assertEqual(created.status_code, 201)
+        patient = LabRegistration.objects.get(pk=created.data["id"]).patient
+        self.assertTrue(patient.check_password("Secure-patient-password-95"))
+
+        payload["existingPatientId"] = str(patient.id)
+        payload["portalPassword"] = "Replacement-password-96"
+        rejected = client.post("/api/registrations/", payload, format="json")
+        self.assertEqual(rejected.status_code, 409)
+        patient.refresh_from_db()
+        self.assertTrue(patient.check_password("Secure-patient-password-95"))
+
+    def test_counter_concession_is_audited_and_doctor_gets_half_of_net_fee(self):
+        client = APIClient(); client.force_authenticate(self.counter)
+        response = client.post("/api/appointments/", {
+            "patientId": str(self.patient.id), "patientName": "Patient",
+            "doctorId": str(self.doctor.id), "doctorName": "Doctor", "department": "Dental",
+            "date": date.today() + timedelta(days=3), "time": "11:00", "fee": 1,
+            "concessionPercent": 20, "concessionReason": "Approved community concession",
+        }, format="json")
+        self.assertEqual(response.status_code, 201)
+        appointment = Appointment.objects.get(pk=response.data["id"])
+        self.assertEqual(appointment.base_consultation_fee, 500)
+        self.assertEqual(appointment.concession_amount, 100)
+        self.assertEqual(appointment.fee, 400)
+        self.assertEqual(appointment.doctor_share_percent, 50)
+        self.assertEqual(appointment.doctor_share_amount, 200)
+        self.assertEqual(appointment.concession_granted_by, self.counter)
+        self.assertIsNotNone(appointment.concession_granted_at)
+
+    def test_counter_cannot_exceed_concession_policy_or_omit_reason(self):
+        client = APIClient(); client.force_authenticate(self.counter)
+        base = {"patientId":str(self.patient.id), "patientName":"Patient", "doctorId":str(self.doctor.id), "doctorName":"Doctor", "department":"Dental", "date":date.today()+timedelta(days=4), "time":"11:00"}
+        self.assertEqual(client.post("/api/appointments/", {**base, "concessionPercent":21, "concessionReason":"Too high"}, format="json").status_code, 403)
+        self.assertEqual(client.post("/api/appointments/", {**base, "concessionPercent":10}, format="json").status_code, 400)
 
     def test_registration_requires_demographics_and_existing_lookup_prefills(self):
         client = APIClient(); client.force_authenticate(self.counter)
@@ -520,6 +617,8 @@ class AdminDashboardTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["totalPatients"], 1)
         self.assertEqual(response.data["appointmentsToday"], 1)
+        self.assertEqual(response.data["cancelledToday"], 0)
+        self.assertEqual(response.data["refundsPending"], 0)
         self.assertEqual(response.data["activeDoctors"], 1)
         self.assertEqual(response.data["grossRevenue"], 750)
         self.assertEqual(response.data["cashRevenue"], 750)
@@ -533,6 +632,21 @@ class AdminDashboardTests(TestCase):
         self.client.force_authenticate(self.patient)
         response = self.client.get("/api/admin/dashboard/")
         self.assertEqual(response.status_code, 403)
+
+    def test_cancelled_appointment_is_removed_from_active_overview_count(self) -> None:
+        today = timezone.localdate()
+        Appointment.objects.create(
+            patient=self.patient, doctor=self.doctor, patient_name="Cancelled Patient", doctor_name="Live Doctor",
+            department="Dental", date=today, time="12:00", fee=500,
+            status=Appointment.Status.CANCELLED, payment_status="Refund Pending",
+            payment_method="CASH", refund_status="Pending", refund_method="CASH", refund_amount=500,
+        )
+        response = self.client.get("/api/management/dashboard/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["appointmentsToday"], 0)
+        self.assertEqual(response.data["cancelledToday"], 1)
+        self.assertEqual(response.data["refundsPending"], 1)
+        self.assertEqual(response.data["grossRevenue"], 0)
 
     def test_admin_can_edit_patient_and_doctor_profile_details(self) -> None:
         response = self.client.patch(
