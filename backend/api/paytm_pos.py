@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import urllib.error
 import urllib.request
 from datetime import datetime
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 class PaytmPosError(RuntimeError):
     pass
@@ -48,9 +51,28 @@ def _post(path: str, body: dict[str, Any], timestamp: str) -> dict[str, Any]:
     request = urllib.request.Request(host + path, data=json.dumps(payload).encode(), headers={"Content-Type": "application/json"}, method="POST")
     try:
         with urllib.request.urlopen(request, timeout=20) as response:
-            result = json.loads(response.read().decode())
-    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
-        raise PaytmPosError("Paytm POS could not be reached. Use manual receipt entry or retry.") from exc
+            raw_response = response.read().decode(errors="replace")
+    except urllib.error.HTTPError as exc:
+        raw_response = exc.read().decode(errors="replace")
+        try:
+            result = json.loads(raw_response)
+        except json.JSONDecodeError:
+            logger.warning("Paytm POS returned non-JSON HTTP response status=%s path=%s", exc.code, path)
+            raise PaytmPosError(f"Paytm POS returned HTTP {exc.code}. Check the Paytm configuration or contact Paytm support.") from exc
+        if not isinstance(result, dict):
+            raise PaytmPosError(f"Paytm POS returned HTTP {exc.code} with an invalid response.") from exc
+        return result
+    except (urllib.error.URLError, TimeoutError) as exc:
+        reason = getattr(exc, "reason", exc)
+        logger.warning("Paytm POS network request failed path=%s error_type=%s", path, type(reason).__name__)
+        raise PaytmPosError(
+            "The backend server could not connect to Paytm's POS API. "
+            "Check server DNS, outbound HTTPS access, firewall rules, and retry."
+        ) from exc
+    try:
+        result = json.loads(raw_response)
+    except json.JSONDecodeError as exc:
+        raise PaytmPosError("Paytm POS returned a non-JSON response. Please retry or contact Paytm support.") from exc
     if not isinstance(result, dict):
         raise PaytmPosError("Paytm POS returned an invalid response.")
     return result
