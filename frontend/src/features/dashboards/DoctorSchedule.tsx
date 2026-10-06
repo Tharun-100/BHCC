@@ -2,8 +2,9 @@
 import React, { useState } from 'react';
 import { User, Appointment } from '../../types';
 import { Calendar, MapPin, ChevronLeft, ChevronRight, CheckCircle, Loader2 } from 'lucide-react';
+import ProcedureEditor from '../../components/ProcedureEditor';
 import DoctorAvailabilityManager from '../../components/DoctorAvailabilityManager';
-import { listDentalProcedures, listDoctorAppointments, saveAppointmentProcedures, updateAppointmentStatus } from '../../services/clinicService';
+import { listDoctorAppointments, updateAppointmentStatus } from '../../services/clinicService';
 
 const DoctorSchedule: React.FC<{ user: User }> = ({ user }) => {
   const [view, setView] = useState<'appointments' | 'availability'>('appointments');
@@ -11,7 +12,6 @@ const DoctorSchedule: React.FC<{ user: User }> = ({ user }) => {
   const [selectedDate, setSelectedDate] = useState(() => new Date());
   const [updatingAppointmentId, setUpdatingAppointmentId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [dentalProcedures, setDentalProcedures] = useState<Array<{id:string;name:string;charge:number}>>([]);
 
   React.useEffect(() => {
     let mounted = true;
@@ -25,17 +25,6 @@ const DoctorSchedule: React.FC<{ user: User }> = ({ user }) => {
       mounted = false;
     };
   }, [user.id]);
-  React.useEffect(()=>{listDentalProcedures().then(setDentalProcedures).catch(()=>setDentalProcedures([]));},[]);
-
-  const chooseProcedures = async (appointment:Appointment) => {
-    const menu = dentalProcedures.map((row,index)=>`${index+1}. ${row.name} — ₹${row.charge}`).join('\n');
-    const answer = window.prompt(`Select performed dental procedures by number, separated with commas. Leave empty to clear.\n\n${menu}`);
-    if(answer===null)return;
-    const indexes = answer.split(',').map(value=>Number(value.trim())-1).filter(index=>Number.isInteger(index)&&index>=0&&index<dentalProcedures.length);
-    try { const result=await saveAppointmentProcedures(appointment.id,[...new Set(indexes)].map(index=>dentalProcedures[index].id)); setSchedule(current=>current.map(row=>row.id===appointment.id?{...row,fee:result.total,paymentStatus:'Pay at Counter'}:row)); }
-    catch(err){setError(err instanceof Error?err.message:'Could not save procedures.');}
-  };
-
   const handleStatus = async (appointmentId: string, status: Appointment['status']) => {
     setUpdatingAppointmentId(appointmentId);
     setError(null);
@@ -133,7 +122,7 @@ const DoctorSchedule: React.FC<{ user: User }> = ({ user }) => {
                             {app.status === 'Upcoming' ? 'Check in' : app.status === 'CheckedIn' ? 'Start consultation' : 'Complete'}
                           </button>
                           {app.status === 'Upcoming' && <button onClick={() => handleStatus(app.id, 'NoShow')} className="px-4 py-3 border border-red-200 text-red-700 rounded-2xl font-bold">Not attended</button>}
-                          {app.department.toLowerCase().includes('dental') && <button onClick={()=>chooseProcedures(app)} className="px-4 py-3 border border-sky-200 text-sky-700 rounded-2xl font-bold">Dental procedures</button>}
+                          <ProcedureEditor appointment={app} onSaved={updated=>setSchedule(current=>current.map(row=>row.id===updated.id?updated:row))}/>
                           <span className="px-6 py-3 bg-gray-50 text-gray-400 rounded-2xl font-bold" title="Patient medical records are not yet stored in the system">Records unavailable</span>
                         </>
                       ) : (

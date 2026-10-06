@@ -751,13 +751,13 @@ def admin_dashboard(request):
     else:
         weekly_growth = 100.0 if current_week_appointments else 0.0
 
-    confirmed_payments = Appointment.objects.filter(payment_status__iexact="Confirmed")
-    cash_revenue = confirmed_payments.filter(payment_method="CASH").aggregate(total=Sum("fee"))["total"] or 0
+    confirmed_payments = Appointment.objects.exclude(payment_status__in=["Refunded", "Transferred"])
+    cash_revenue = confirmed_payments.filter(payment_method="CASH").aggregate(total=Sum("collected_amount"))["total"] or 0
     online_revenue = confirmed_payments.filter(
         Q(payment_method__in=["RAZORPAY", "PAYTM_POS_MANUAL", "PAYTM_POS_AUTOMATIC"])
         | (Q(payment_method="") & ~Q(payment_id=""))
-    ).aggregate(total=Sum("fee"))["total"] or 0
-    collected_revenue = confirmed_payments.aggregate(total=Sum("fee"))["total"] or 0
+    ).aggregate(total=Sum("collected_amount"))["total"] or 0
+    collected_revenue = confirmed_payments.aggregate(total=Sum("collected_amount"))["total"] or 0
     recent_appointments = Appointment.objects.select_related("patient", "doctor").order_by("-created_at")[:10]
 
     return Response(
@@ -770,6 +770,8 @@ def admin_dashboard(request):
                 role=UserRole.DOCTOR, user__is_active=True
             ).count(),
             "grossRevenue": collected_revenue,
+            "procedureCharges": AppointmentProcedure.objects.exclude(appointment__status__in=inactive_statuses).aggregate(total=Sum("charge"))["total"] or 0,
+            "totalBilled": Appointment.objects.exclude(status__in=inactive_statuses).aggregate(total=Sum("fee"))["total"] or 0,
             "cashRevenue": cash_revenue,
             "onlineRevenue": online_revenue,
             "currentWeekAppointments": current_week_appointments,
@@ -965,6 +967,7 @@ def appointment_detail(request, pk: int):
                     status=Appointment.Status.UPCOMING,
                     payment_id=locked.payment_id,
                     payment_status=original_payment_status,
+                    collected_amount=locked.collected_amount,
                     payment_method=original_payment_method,
                     payment_reference=locked.payment_reference,
                     payment_recorded_by=locked.payment_recorded_by,
@@ -1130,6 +1133,9 @@ def manual_pos_payment(request, pk: int):
         appointment = get_object_or_404(Appointment.objects.select_for_update(), pk=pk)
         if appointment.status == Appointment.Status.CANCELLED:
             return Response({"detail": "A cancelled appointment cannot be marked paid."}, status=status.HTTP_409_CONFLICT)
+        amount_received = max(0, appointment.fee - appointment.collected_amount)
+        if not amount_received:
+            return Response({"detail": "No outstanding balance to collect."}, status=409)
         if payment_method == "PAYTM_POS_MANUAL":
             duplicate = Appointment.objects.exclude(pk=appointment.pk).filter(
                 payment_method="PAYTM_POS_MANUAL", payment_reference__iexact=reference
@@ -1139,18 +1145,19 @@ def manual_pos_payment(request, pk: int):
         else:
             reference = reference or f"CASH-BHCC-{appointment.pk:06d}"
         appointment.payment_status = "Confirmed"
+        appointment.collected_amount = appointment.fee
         appointment.payment_method = payment_method
         appointment.payment_reference = reference
         appointment.payment_recorded_by = request.user
         appointment.payment_recorded_at = timezone.now()
-        appointment.save(update_fields=["payment_status", "payment_method", "payment_reference", "payment_recorded_by", "payment_recorded_at", "updated_at"])
+        appointment.save(update_fields=["collected_amount", "payment_status", "payment_method", "payment_reference", "payment_recorded_by", "payment_recorded_at", "updated_at"])
         AdminAuditLog.objects.create(
             actor=request.user,
             action="CASH_PAYMENT_RECORDED" if payment_method == "CASH" else "MANUAL_POS_PAYMENT_RECORDED",
             target_type="Appointment",
             target_id=str(appointment.pk),
             summary=f"Recorded {'cash' if payment_method == 'CASH' else 'physical Paytm POS'} payment for appointment BHCC-{appointment.pk:06d}",
-            metadata={"method": payment_method, "reference": reference, "amount": appointment.fee},
+            metadata={"method": payment_method, "reference": reference, "amount": amount_received},
         )
     return Response(AppointmentSerializer(appointment).data)
 
@@ -1173,6 +1180,8 @@ def paytm_pos_initiate(request, pk: int):
         return Response({"detail": "This appointment does not require a POS payment."}, status=status.HTTP_409_CONFLICT)
     if appointment.payment_status == "Confirmed":
         return Response({"detail": "This appointment is already paid."}, status=status.HTTP_409_CONFLICT)
+    if appointment.collected_amount:
+        return Response({"detail": "Record additional payments using cash or a physical POS receipt."}, status=409)
     from .paytm_pos import PaytmPosError, initiate_sale
     transaction_id = f"BHCC{appointment.pk}{timezone.now():%y%m%d%H%M%S}"
     try:
@@ -1213,6 +1222,7 @@ def paytm_pos_status(request, pk: int):
     stored["paytmPosStatus"] = result
     appointment.gateway_details = stored
     if result_status == "SUCCESS":
+        appointment.collected_amount = appointment.fee
         appointment.payment_status = "Confirmed"
         appointment.payment_recorded_by = request.user
         appointment.payment_recorded_at = timezone.now()
@@ -1220,7 +1230,7 @@ def paytm_pos_status(request, pk: int):
         appointment.payment_status = "Failed"
     else:
         appointment.payment_status = "Pending at POS"
-    appointment.save(update_fields=["payment_status", "payment_recorded_by", "payment_recorded_at", "gateway_details", "updated_at"])
+    appointment.save(update_fields=["collected_amount", "payment_status", "payment_recorded_by", "payment_recorded_at", "gateway_details", "updated_at"])
     return Response(AppointmentSerializer(appointment).data)
 
 
@@ -1237,10 +1247,15 @@ def dental_procedures(request):
         except (TypeError, ValueError): charge = 0
         if not name or charge <= 0:
             return Response({"detail": "Procedure name and a positive charge are required."}, status=status.HTTP_400_BAD_REQUEST)
-        row = DentalProcedure.objects.create(name=name, description=str(request.data.get("description") or "").strip(), charge=charge)
-        return Response({"id":str(row.id),"name":row.name,"description":row.description,"charge":row.charge,"isActive":row.is_active}, status=status.HTTP_201_CREATED)
+        department = str(request.data.get("department") or "").strip()
+        if not Department.objects.filter(name=department).exists():
+            return Response({"detail": "Select an existing department."}, status=400)
+        if DentalProcedure.objects.filter(department=department, name__iexact=name).exists():
+            return Response({"detail": "This procedure already exists in the department."}, status=400)
+        row = DentalProcedure.objects.create(department=department, name=name, description=str(request.data.get("description") or "").strip(), charge=charge)
+        return Response({"id":str(row.id),"name":row.name,"description":row.description,"department":row.department,"charge":row.charge,"isActive":row.is_active}, status=status.HTTP_201_CREATED)
     rows = DentalProcedure.objects.all() if role == UserRole.ADMIN else DentalProcedure.objects.filter(is_active=True)
-    return Response([{"id":str(row.id),"name":row.name,"description":row.description,"charge":row.charge,"isActive":row.is_active} for row in rows.order_by("name")])
+    return Response([{"id":str(row.id),"name":row.name,"description":row.description,"department":row.department,"charge":row.charge,"isActive":row.is_active} for row in rows.order_by("name")])
 
 
 @api_view(["PATCH"])
@@ -1250,6 +1265,11 @@ def dental_procedure_detail(request, pk: int):
     if getattr(getattr(request.user, "profile", None), "role", None) != UserRole.ADMIN:
         return Response({"detail": "Only administrators can update procedures."}, status=status.HTTP_403_FORBIDDEN)
     row = get_object_or_404(DentalProcedure, pk=pk)
+    if "department" in request.data:
+        department = str(request.data["department"]).strip()
+        if not Department.objects.filter(name=department).exists():
+            return Response({"detail": "Select an existing department."}, status=400)
+        row.department = department
     if "name" in request.data: row.name = str(request.data["name"]).strip()
     if "charge" in request.data:
         try: row.charge = int(request.data["charge"])
@@ -1257,7 +1277,9 @@ def dental_procedure_detail(request, pk: int):
     if "description" in request.data: row.description = str(request.data["description"]).strip()
     if "isActive" in request.data: row.is_active = bool(request.data["isActive"])
     if not row.name or row.charge <= 0: return Response({"detail":"Name and positive charge are required."}, status=400)
-    row.save(); return Response({"id":str(row.id),"name":row.name,"description":row.description,"charge":row.charge,"isActive":row.is_active})
+    if DentalProcedure.objects.exclude(pk=pk).filter(department=row.department, name__iexact=row.name).exists():
+        return Response({"detail": "This procedure already exists in the department."}, status=400)
+    row.save(); return Response({"id":str(row.id),"name":row.name,"description":row.description,"department":row.department,"charge":row.charge,"isActive":row.is_active})
 
 
 @api_view(["GET", "PUT"])
@@ -1269,24 +1291,49 @@ def appointment_procedures(request, pk: int):
     if role not in {UserRole.ADMIN, UserRole.COUNTER} and request.user.id not in {appointment.doctor_id, appointment.patient_id}:
         return Response({"detail":"Forbidden."}, status=403)
     if request.method == "PUT":
-        if role != UserRole.DOCTOR or request.user.id != appointment.doctor_id:
-            return Response({"detail":"Only the assigned doctor can add procedures."}, status=403)
-        if "dental" not in appointment.department.casefold():
-            return Response({"detail":"Procedures can only be added to dental appointments."}, status=400)
-        if appointment.payment_status == "Confirmed":
-            return Response({"detail":"Paid bills cannot be changed."}, status=409)
-        ids = request.data.get("procedureIds") or []
-        procedures = list(DentalProcedure.objects.filter(pk__in=ids, is_active=True))
-        if len(procedures) != len(set(map(str, ids))): return Response({"detail":"Select valid active procedures."}, status=400)
+        if role not in {UserRole.ADMIN, UserRole.COUNTER} and not (role == UserRole.DOCTOR and request.user.id == appointment.doctor_id):
+            return Response({"detail": "Only the assigned doctor, admin or counter can edit procedures."}, status=403)
+        if appointment.status in {"Cancelled", "NoShow", "Rescheduled"} or (role == UserRole.DOCTOR and appointment.status == "Completed"):
+            return Response({"detail": "This appointment cannot be edited by you."}, status=409)
+        items = request.data.get("items")
+        if items is None:
+            ids = request.data.get("procedureIds", [])
+            if not isinstance(ids, list):
+                return Response({"detail": "Provide a list of procedures."}, status=400)
+            items = [{"procedureId": value} for value in ids]
+        if not isinstance(items, list) or any(not isinstance(item, dict) for item in items):
+            return Response({"detail": "Provide a list of procedures."}, status=400)
         with transaction.atomic():
-            appointment.procedure_charges.all().delete()
-            AppointmentProcedure.objects.bulk_create([AppointmentProcedure(appointment=appointment, procedure=row, name=row.name, charge=row.charge, added_by=request.user) for row in procedures])
-            consultation_fee = max(0, int(appointment.base_consultation_fee or appointment.doctor.profile.fee or 0) - int(appointment.concession_amount or 0))
-            appointment.fee = consultation_fee + sum(row.charge for row in procedures)
-            appointment.payment_status = "Pay at Counter"
-            appointment.save(update_fields=["fee", "payment_status", "updated_at"])
+            appointment = Appointment.objects.select_for_update().get(pk=pk)
+            if appointment.status in {"Cancelled", "NoShow", "Rescheduled"} or (role == UserRole.DOCTOR and appointment.status == "Completed"):
+                return Response({"detail": "This appointment cannot be edited by you."}, status=409)
+            if appointment.payment_status in {"Pending at POS", "Pending"} and (appointment.gateway_order_id or appointment.order_id or appointment.payment_reference):
+                return Response({"detail": "Resolve the in-progress payment before changing charges."}, status=409)
+            existing = {str(row.procedure_id): row for row in appointment.procedure_charges.all()}
+            selected = {}
+            for item in items:
+                procedure_id = str(item.get("procedureId", ""))
+                if not procedure_id.isdigit() or procedure_id in selected:
+                    return Response({"detail": "Select valid procedures without duplicates."}, status=400)
+                procedure = DentalProcedure.objects.filter(pk=procedure_id, department__iexact=appointment.department).first()
+                if not procedure or (not procedure.is_active and procedure_id not in existing):
+                    return Response({"detail": "Select active procedures from the appointment department."}, status=400)
+                previous = existing.get(procedure_id)
+                charge = item.get("charge", previous.charge if previous else procedure.charge)
+                if isinstance(charge, bool) or not isinstance(charge, int) or charge < 0:
+                    return Response({"detail": "Charges must be non-negative whole rupees."}, status=400)
+                selected[procedure_id] = (procedure, charge)
+            consultation_fee = max(0, appointment.fee - sum(row.charge for row in existing.values()))
+            for procedure_id, (procedure, charge) in selected.items():
+                AppointmentProcedure.objects.update_or_create(appointment=appointment, procedure=procedure, defaults={"name": existing[procedure_id].name if procedure_id in existing else procedure.name, "charge": charge, "added_by": request.user})
+            appointment.procedure_charges.exclude(procedure_id__in=selected).delete()
+            appointment.fee = consultation_fee + sum(charge for _, charge in selected.values())
+            appointment.doctor_share_amount = appointment.fee * appointment.doctor_share_percent // 100
+            appointment.payment_status = "Pay at Counter" if appointment.fee > appointment.collected_amount else "Confirmed"
+            appointment.save(update_fields=["fee", "doctor_share_amount", "payment_status", "updated_at"])
+            AdminAuditLog.objects.create(actor=request.user, action="APPOINTMENT_PROCEDURES_UPDATED", target_type="Appointment", target_id=str(pk), metadata={"items": items, "total": appointment.fee}, summary="Updated patient procedure charges.")
     rows = appointment.procedure_charges.all().order_by("id")
-    return Response({"appointmentId":str(appointment.id),"total":appointment.fee,"items":[{"id":str(row.id),"procedureId":str(row.procedure_id),"name":row.name,"charge":row.charge} for row in rows]})
+    return Response({"appointmentId":str(appointment.id),"total":appointment.fee,"appointment":AppointmentSerializer(appointment).data,"items":[{"id":str(row.id),"procedureId":str(row.procedure_id),"name":row.name,"charge":row.charge} for row in rows]})
 
 
 @api_view(["GET", "PUT"])
@@ -2172,6 +2219,7 @@ def payments_verify(request):
         if expected != rzp_signature:
             return Response({"detail": "Invalid signature."}, status=status.HTTP_403_FORBIDDEN)
 
+        appt.collected_amount = appt.fee
         appt.payment_status = "Confirmed"
         appt.status = Appointment.Status.UPCOMING
         appt.payment_id = rzp_payment_id
@@ -2179,7 +2227,7 @@ def payments_verify(request):
         appt.payment_reference = rzp_payment_id
         appt.payment_recorded_at = timezone.now()
         appt.gateway_details = gateway_response
-        appt.save(update_fields=["payment_status", "status", "payment_id", "payment_method", "payment_reference", "payment_recorded_at", "gateway_details", "updated_at"])
+        appt.save(update_fields=["collected_amount", "payment_status", "status", "payment_id", "payment_method", "payment_reference", "payment_recorded_at", "gateway_details", "updated_at"])
         schedule_appointment_confirmation(appt.id)
         return Response({"status": "success", "message": "Payment verified and appointment confirmed."})
 

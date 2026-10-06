@@ -77,12 +77,16 @@ class Department(models.Model):
 
 
 class DentalProcedure(models.Model):
-    name = models.CharField(max_length=160, unique=True)
+    department = models.CharField(max_length=120, default="Dental")
+    name = models.CharField(max_length=160)
     description = models.TextField(blank=True, default="")
     charge = models.PositiveIntegerField()
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["department", "name"], name="unique_department_procedure")]
 
 
 class Appointment(models.Model):
@@ -136,6 +140,7 @@ class Appointment(models.Model):
     payment_id = models.CharField(max_length=120, blank=True, default="")
 
     payment_status = models.CharField(max_length=20, blank=True, default="Pending")
+    collected_amount = models.PositiveIntegerField(default=0)
     payment_method = models.CharField(max_length=30, blank=True, default="")
     payment_reference = models.CharField(max_length=120, blank=True, default="")
     payment_recorded_by = models.ForeignKey(

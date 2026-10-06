@@ -149,6 +149,11 @@ class AppointmentSerializer(serializers.ModelSerializer):
             "date",
             "time",
             "fee",
+            "procedureCharges",
+            "procedureTotal",
+            "collectedAmount",
+            "balanceDue",
+            "overpaidAmount",
             "baseConsultationFee",
             "concessionPercent",
             "concessionAmount",
@@ -179,6 +184,23 @@ class AppointmentSerializer(serializers.ModelSerializer):
         ]
 
     paymentId = serializers.CharField(source="payment_id", allow_blank=True, required=False)
+    collectedAmount = serializers.IntegerField(source="collected_amount", read_only=True)
+    procedureCharges = serializers.SerializerMethodField()
+    procedureTotal = serializers.SerializerMethodField()
+    balanceDue = serializers.SerializerMethodField()
+    overpaidAmount = serializers.SerializerMethodField()
+
+    def get_procedureCharges(self, obj):
+        return [{"procedureId": str(row.procedure_id), "name": row.name, "charge": row.charge} for row in obj.procedure_charges.all()]
+
+    def get_procedureTotal(self, obj):
+        return sum(row.charge for row in obj.procedure_charges.all())
+
+    def get_balanceDue(self, obj):
+        return max(0, obj.fee - obj.collected_amount)
+
+    def get_overpaidAmount(self, obj):
+        return max(0, obj.collected_amount - obj.fee)
     baseConsultationFee = serializers.IntegerField(source="base_consultation_fee", read_only=True)
     concessionPercent = serializers.IntegerField(source="concession_percent", required=False, min_value=0, max_value=100)
     concessionAmount = serializers.IntegerField(source="concession_amount", read_only=True)

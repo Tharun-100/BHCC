@@ -1,3 +1,4 @@
+import ProcedureEditor from '../../components/ProcedureEditor';
 import React from "react";
 import Link from "next/link";
 import {
@@ -150,10 +151,11 @@ const CounterDashboard: React.FC<{ user: User }> = () => {
   const [saving, setSaving] = React.useState(false);
   const [showPortalPassword, setShowPortalPassword] = React.useState(false);
   const today = clinicDate(new Date());
+  const [paymentDate, setPaymentDate] = React.useState(() => clinicDate(new Date()));
   const todayRegistrations = registrations.filter(
     (row) => clinicDate(new Date(row.createdAt)) === today,
   );
-  const todayAppointments = appointments.filter((row) => row.date === today);
+  const todayAppointments = appointments.filter((row) => row.date === paymentDate);
   const reconciliationAppointments = appointments
     .filter(
       (row) =>
@@ -326,14 +328,7 @@ const CounterDashboard: React.FC<{ user: User }> = () => {
         : appointment.paymentMethod === "FREE_FOLLOW_UP"
           ? "Free Follow-up"
           : "Paytm POS";
-    const paidAmount =
-      appointment.paymentMethod === "FREE_FOLLOW_UP"
-        ? 0
-        : Math.max(
-            0,
-            (appointment.baseConsultationFee ?? appointment.fee) -
-              (appointment.concessionAmount ?? 0),
-          );
+    const paidAmount = appointment.collectedAmount ?? 0;
     const formattedDate = new Date(
       `${appointment.date}T00:00:00`,
     ).toLocaleDateString("en-IN", {
@@ -358,6 +353,10 @@ const CounterDashboard: React.FC<{ user: User }> = () => {
       ["Date :", formattedDate],
       ["Time :", appointment.time],
       ["Token :", appointment.tokenNumber || "—"],
+      ...(appointment.procedureCharges ?? []).map(item => [item.name + " :", `₹${item.charge}`]),
+      ["Total bill :", `₹${appointment.fee}`],
+      ["Balance due :", `₹${appointment.balanceDue ?? 0}`],
+      ["Overpaid :", `₹${appointment.overpaidAmount ?? 0}`],
       ...(appointment.concessionPercent
         ? [
             [
@@ -402,7 +401,7 @@ const CounterDashboard: React.FC<{ user: User }> = () => {
 
   const recordPosPayment = async (appointment: Appointment) => {
     const reference = window.prompt(
-      `Enter the Paytm POS receipt/reference for ${appointment.patientName}.\nAmount: ₹${appointment.fee}`,
+      `Enter the Paytm POS receipt/reference for ${appointment.patientName}.\nAmount: ₹${appointment.balanceDue ?? appointment.fee}`,
       appointment.paymentReference || "",
     );
     if (reference === null) return;
@@ -430,7 +429,7 @@ const CounterDashboard: React.FC<{ user: User }> = () => {
   const recordCash = async (appointment: Appointment) => {
     if (
       !window.confirm(
-        `Confirm cash received from ${appointment.patientName}.\nAmount: ₹${appointment.fee.toLocaleString("en-IN")}`,
+        `Confirm cash received from ${appointment.patientName}.\nAmount: ₹${(appointment.balanceDue ?? appointment.fee).toLocaleString("en-IN")}`,
       )
     )
       return;
@@ -1627,7 +1626,7 @@ const CounterDashboard: React.FC<{ user: User }> = () => {
                   >
                     <b>
                       {booking.followUpOf
-                        ? "✓ Free follow-up applied"
+                        ? "âœ“ Free follow-up applied"
                         : "Free follow-up available"}
                     </b>
                     <small className="block">
@@ -1710,7 +1709,7 @@ const CounterDashboard: React.FC<{ user: User }> = () => {
                         Concession ({concessionPercent}%)
                       </span>
                       <b className="text-right text-amber-700">
-                        −₹{concessionAmount.toLocaleString("en-IN")}
+                        âˆ’₹{concessionAmount.toLocaleString("en-IN")}
                       </b>
                     </>
                   )}
@@ -1760,10 +1759,10 @@ const CounterDashboard: React.FC<{ user: User }> = () => {
             </button>
           </form>
           <div className="border-b p-6">
-            <h2 className="text-xl font-bold">Today’s consultation payments</h2>
+            <h2 className="text-xl font-bold">Appointment charges and payments</h2>
+            <label className="block text-sm font-bold">Appointment date <input type="date" value={paymentDate} onChange={e=>setPaymentDate(e.target.value)} className="ml-2 rounded-lg border p-2"/></label>
             <p className="text-sm text-gray-500">
-              Daily department tokens reset from 001. Only today’s appointments
-              appear here; historical payments remain stored.
+              Select a date to manage current or previously consulted patients.
             </p>
           </div>
           <div className="overflow-x-auto">
@@ -1807,6 +1806,9 @@ const CounterDashboard: React.FC<{ user: User }> = () => {
                       ₹{row.fee.toLocaleString("en-IN")}
                     </td>
                     <td className="p-4">
+                      <ProcedureEditor appointment={row} onSaved={updated=>setAppointments(current=>current.map(item=>item.id===updated.id?updated:item))}/>
+                      {row.procedureCharges?.map(item=><small key={item.procedureId} className="block">{item.name}: ₹{item.charge}</small>)}
+                      <small className="block">Balance: ₹{row.balanceDue ?? row.fee} · Overpaid: ₹{row.overpaidAmount ?? 0}</small>
                       {row.paymentStatus || "Pending"}
                       {row.paymentMethod && (
                         <small className="block font-bold">

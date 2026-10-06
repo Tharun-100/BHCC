@@ -656,6 +656,7 @@ class AdminDashboardTests(TestCase):
             date=today,
             time="10:00",
             fee=750,
+            collected_amount=750,
             status=Appointment.Status.COMPLETED,
             payment_status="Confirmed",
             payment_method="CASH",

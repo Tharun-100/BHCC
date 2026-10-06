@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import ProcedureEditor from '../../components/ProcedureEditor';
 import { Banknote, Calendar, CreditCard, Heart, Search, Users, Wallet } from 'lucide-react';
 
 import { cancelAppointment, getAdminDashboardSummary, getDoctorAvailability, recordAppointmentRefund, rescheduleAppointment, type AdminDashboardSummary } from '../../services/clinicService';
@@ -196,13 +197,13 @@ const AdminDashboard: React.FC<{ user: User }> = ({ user }) => {
                       <tr key={appointment.id} className="hover:bg-gray-50 transition">
                         <td className="px-8 py-5 font-bold text-gray-900">{appointment.patientName}</td>
                         <td className="px-8 py-5 text-sm text-gray-500">{appointment.doctorName}</td>
-                        <td className="px-8 py-5 text-sm font-bold text-sky-600">{formatCurrency(appointment.fee)}</td>
+                        <td className="px-8 py-5 text-sm font-bold text-sky-600">{formatCurrency(appointment.fee)}<small className="block">Procedures: {formatCurrency(appointment.procedureTotal ?? 0)}</small><small className="block">Due: {formatCurrency(appointment.balanceDue ?? 0)} · Overpaid: {formatCurrency(appointment.overpaidAmount ?? 0)}</small></td>
                         <td className="px-8 py-5">
                           <span className={`px-2 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider ${presentation.classes}`}>
                             {presentation.label}
                           </span>
                         </td>
-                        <td className="px-8 py-5"><div className="flex flex-wrap gap-2">{['Upcoming','CheckedIn'].includes(appointment.status)&&<><button type="button" onClick={() => void rescheduleFromOverview(appointment)} className="rounded-lg border border-amber-500 px-2 py-1 text-xs font-bold text-amber-800">Reschedule</button><button type="button" onClick={() => void cancelFromOverview(appointment)} className="rounded-lg border border-red-500 px-2 py-1 text-xs font-bold text-red-700">Cancel</button></>}{appointment.status==='Cancelled'&&appointment.refundStatus==='Pending'&&['CASH','PAYTM_POS'].includes(appointment.refundMethod||'')&&<button type="button" onClick={() => void refundFromOverview(appointment)} className="rounded-lg bg-red-600 px-2 py-1 text-xs font-bold text-white">Record refund</button>}</div></td>
+                        <td className="px-8 py-5"><div className="flex flex-wrap gap-2"><ProcedureEditor appointment={appointment} onSaved={()=>void loadSummary()}/>{['Upcoming','CheckedIn'].includes(appointment.status)&&<><button type="button" onClick={() => void rescheduleFromOverview(appointment)} className="rounded-lg border border-amber-500 px-2 py-1 text-xs font-bold text-amber-800">Reschedule</button><button type="button" onClick={() => void cancelFromOverview(appointment)} className="rounded-lg border border-red-500 px-2 py-1 text-xs font-bold text-red-700">Cancel</button></>}{appointment.status==='Cancelled'&&appointment.refundStatus==='Pending'&&['CASH','PAYTM_POS'].includes(appointment.refundMethod||'')&&<button type="button" onClick={() => void refundFromOverview(appointment)} className="rounded-lg bg-red-600 px-2 py-1 text-xs font-bold text-white">Record refund</button>}</div></td>
                       </tr>
                     );
                   })}
@@ -222,6 +223,7 @@ const AdminDashboard: React.FC<{ user: User }> = ({ user }) => {
         <div>
           <div className="bg-gray-900 rounded-[2rem] p-8 text-white shadow-xl">
             <h3 className="font-bold mb-6">Live Activity</h3>
+            <p className="mb-4">Procedure charges billed: {formatCurrency(summary?.procedureCharges ?? 0)}<br/>Total billed: {formatCurrency(summary?.totalBilled ?? 0)}</p>
             <div className="space-y-6">
               <div className="p-4 bg-gray-800 rounded-2xl">
                 <p className="text-xs text-gray-400 uppercase font-bold mb-1">Appointments This Week</p>

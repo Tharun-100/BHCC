@@ -14,7 +14,7 @@ const netConsultation = (row: Appointment) =>
     (row.baseConsultationFee ?? row.fee) - (row.concessionAmount ?? 0),
   );
 const doctorShare = (row: Appointment) =>
-  row.doctorShareAmount ?? Math.floor(netConsultation(row) / 2);
+  row.doctorShareAmount ?? Math.floor(row.fee / 2);
 
 const DoctorDashboard: React.FC<{ user: User }> = ({ user }) => {
   const [appointments, setAppointments] = React.useState<Appointment[]>([]);
@@ -28,15 +28,17 @@ const DoctorDashboard: React.FC<{ user: User }> = ({ user }) => {
     listDoctorAppointments(user.id)
       .then((rows) => mounted && setAppointments(rows))
       .catch(() => mounted && setAppointments([]));
+    const timer = window.setInterval(() => {listDoctorAppointments(user.id).then(rows=>mounted && setAppointments(rows)).catch(()=>{});}, 30_000);
     return () => {
       mounted = false;
+      window.clearInterval(timer);
     };
   }, [user.id]);
 
   const monthRows = appointments.filter((row) =>
     row.date.startsWith(selectedMonth),
   );
-  const paid = monthRows.filter((row) => row.paymentStatus === "Confirmed");
+  const paid = monthRows.filter((row) => row.paymentStatus === "Confirmed" || ((row.collectedAmount ?? 0) > 0 && (row.collectedAmount ?? 0) >= row.fee));
   const eligible = paid.filter((row) => row.status === "Completed");
   const todayKey = new Date().toLocaleDateString("en-CA");
   const todayRows = appointments.filter((row) => row.date === todayKey);
@@ -47,10 +49,14 @@ const DoctorDashboard: React.FC<{ user: User }> = ({ user }) => {
       .map((row) => row.patientId),
   ).size;
   const netRevenue = paid.reduce(
-    (total, row) => total + netConsultation(row),
+    (total, row) => total + row.fee,
     0,
   );
   const earnings = eligible.reduce((total, row) => total + doctorShare(row), 0);
+  const completed = monthRows.filter(row => row.status === 'Completed');
+  const procedureBilled = completed.reduce((total,row)=>total+(row.procedureTotal ?? 0),0);
+  const completedBilled = completed.reduce((total,row)=>total+row.fee,0);
+  const completedCollected = completed.reduce((total,row)=>total+(row.collectedAmount ?? 0),0);
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
@@ -98,9 +104,9 @@ const DoctorDashboard: React.FC<{ user: User }> = ({ user }) => {
           {
             icon: <DollarSign />,
             tone: "bg-green-50 text-green-600",
-            label: "Your 50% Consultation Share",
+            label: "Your 50% Consultation + Procedure Share",
             value: `₹${earnings.toLocaleString("en-IN")}`,
-            note: "Paid and completed consultations only",
+            note: "Fully paid and completed appointments only",
           },
           {
             icon: <CheckCircle />,
@@ -126,6 +132,7 @@ const DoctorDashboard: React.FC<{ user: User }> = ({ user }) => {
           </div>
         ))}
       </div>
+      <div className="mb-8 rounded-3xl border bg-white p-6"><h3 className="font-bold">Completed patient billing this month</h3><p>Procedure charges: ₹{procedureBilled.toLocaleString('en-IN')} · Total billed: ₹{completedBilled.toLocaleString('en-IN')} · Collected: ₹{completedCollected.toLocaleString('en-IN')}</p><p className="text-sm text-gray-500">Procedure charges are attributed to your appointments. Your 50% share applies to consultation and procedure fees.</p></div>
       <div className="mb-8 overflow-hidden rounded-3xl border border-gray-100 bg-white shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b px-6 py-5">
           <div>
@@ -134,7 +141,7 @@ const DoctorDashboard: React.FC<{ user: User }> = ({ user }) => {
             </h3>
             <p className="text-sm text-gray-500">
               All confirmed payments are listed. Share accrues after the
-              consultation is marked completed. Dental procedures are excluded.
+              consultation is marked completed and the full bill is paid. The 50% share includes procedures.
             </p>
           </div>
           <span className="font-black text-sky-700">
@@ -149,6 +156,7 @@ const DoctorDashboard: React.FC<{ user: User }> = ({ user }) => {
                 <th className="p-4">Standard fee</th>
                 <th className="p-4">Concession</th>
                 <th className="p-4">Net consultation</th>
+                <th className="p-4">Procedures</th>
                 <th className="p-4">Doctor share</th>
               </tr>
             </thead>
@@ -175,6 +183,7 @@ const DoctorDashboard: React.FC<{ user: User }> = ({ user }) => {
                     <td className="p-4 font-bold">
                       ₹{net.toLocaleString("en-IN")}
                     </td>
+                    <td className="p-4">₹{(row.procedureTotal ?? 0).toLocaleString("en-IN")}</td>
                     <td className="p-4 font-black text-emerald-700">
                       {row.status === "Completed" ? `₹${doctorShare(row).toLocaleString("en-IN")}` : <span className="text-amber-700">Pending completion</span>}
                     </td>
@@ -184,7 +193,7 @@ const DoctorDashboard: React.FC<{ user: User }> = ({ user }) => {
               {paid.length === 0 && (
                 <tr>
                   <td
-                    colSpan={5}
+                    colSpan={6}
                     className="p-8 text-center font-bold text-gray-400"
                   >
                     No confirmed consultation payments for this month.

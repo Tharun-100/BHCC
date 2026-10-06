@@ -116,6 +116,8 @@ export interface AdminDashboardSummary {
   refundsPending: number;
   activeDoctors: number;
   grossRevenue: number;
+  procedureCharges: number;
+  totalBilled: number;
   cashRevenue: number;
   onlineRevenue: number;
   currentWeekAppointments: number;
@@ -235,10 +237,10 @@ export const checkPaytmPosPayment = async (appointmentId: string): Promise<Appoi
 };
 
 export const listDentalProcedures = async ():Promise<DentalProcedure[]> => {const token=authTokenOrThrow();return apiFetch('/api/dental-procedures/',{method:'GET',authToken:token});};
-export const createDentalProcedure = async(payload:{name:string;description:string;charge:number}):Promise<DentalProcedure>=>{const token=authTokenOrThrow();return apiFetch('/api/dental-procedures/',{method:'POST',authToken:token,body:JSON.stringify(payload)});};
+export const createDentalProcedure = async(payload:{department:string;name:string;description:string;charge:number}):Promise<DentalProcedure>=>{const token=authTokenOrThrow();return apiFetch('/api/dental-procedures/',{method:'POST',authToken:token,body:JSON.stringify(payload)});};
 export const updateDentalProcedure = async(id:string,payload:Partial<DentalProcedure>):Promise<DentalProcedure>=>{const token=authTokenOrThrow();return apiFetch(`/api/dental-procedures/${id}/`,{method:'PATCH',authToken:token,body:JSON.stringify(payload)});};
 export const getAppointmentProcedures = async(id:string):Promise<{appointmentId:string;total:number;items:Array<{procedureId:string;name:string;charge:number}>}>=>{const token=authTokenOrThrow();return apiFetch(`/api/appointments/${id}/procedures/`,{method:'GET',authToken:token});};
-export const saveAppointmentProcedures = async(id:string,procedureIds:string[]):Promise<{total:number;items:Array<{procedureId:string;name:string;charge:number}>}>=>{const token=authTokenOrThrow();return apiFetch(`/api/appointments/${id}/procedures/`,{method:'PUT',authToken:token,body:JSON.stringify({procedureIds})});};
+export const saveAppointmentProcedures = async(id:string,items:Array<{procedureId:string;charge:number}>):Promise<{total:number;appointment:Appointment;items:Array<{procedureId:string;name:string;charge:number}>}>=>{const token=authTokenOrThrow();return apiFetch(`/api/appointments/${id}/procedures/`,{method:'PUT',authToken:token,body:JSON.stringify({items})});};
 
 export const listDoctorAppointmentsByDate = async (doctorId: string, date: string): Promise<Appointment[]> => {
   const token = authTokenOrThrow();

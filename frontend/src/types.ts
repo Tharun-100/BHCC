@@ -144,9 +144,14 @@ export interface Department {
   tokenPrefix: string;
 }
 
-export interface DentalProcedure { id:string; name:string; description:string; charge:number; isActive:boolean; }
+export interface DentalProcedure { department:string; id:string; name:string; description:string; charge:number; isActive:boolean; }
 
 export interface Appointment {
+  procedureCharges?: Array<{procedureId:string;name:string;charge:number}>;
+  procedureTotal?: number;
+  collectedAmount?: number;
+  balanceDue?: number;
+  overpaidAmount?: number;
   id: string;
   patientId: string;
   patientName: string;
