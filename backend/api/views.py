@@ -1163,10 +1163,8 @@ def manual_pos_payment(request, pk: int):
 
 
 def _paytm_result(payload):
-    body = payload.get("body") if isinstance(payload, dict) else {}
-    body = body if isinstance(body, dict) else {}
-    info = body.get("resultInfo") if isinstance(body.get("resultInfo"), dict) else body
-    return str(info.get("resultStatus") or info.get("status") or "").upper(), str(info.get("resultMsg") or "")
+    from .paytm_pos import result_info
+    return result_info(payload)
 
 
 @api_view(["POST"])
@@ -1217,7 +1215,7 @@ def paytm_pos_status(request, pk: int):
     result_status, _ = _paytm_result(result)
     body = result.get("body") if isinstance(result.get("body"), dict) else {}
     returned_amount = str(body.get("transactionAmount") or "")
-    if result_status == "SUCCESS" and returned_amount and returned_amount != str(appointment.fee * 100):
+    if result_status == "SUCCESS" and returned_amount != str(appointment.fee * 100):
         return Response({"detail": "Paytm returned a different amount. Payment was not confirmed."}, status=status.HTTP_409_CONFLICT)
     stored["paytmPosStatus"] = result
     appointment.gateway_details = stored
